@@ -18,7 +18,9 @@
 
 <h2>Pending Leave Requests</h2>
 {% if pending_requests %}
-<table class="pending-requests-table" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+
+<!-- Desktop Table -->
+<table class="pending-requests-table desktop-view" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
     <thead>
         <tr style="background: #f5f5f5;">
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee</th>
@@ -53,6 +55,38 @@
         {% endfor %}
     </tbody>
 </table>
+
+<!-- Mobile Cards -->
+<div class="mobile-view" style="display: none;">
+    {% for request in pending_requests %}
+    <div style="border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-bottom: 15px;">
+        <div style="margin-bottom: 10px;">
+            <strong>Employee:</strong> {{ request.employee.full_name }}
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Leave Type:</strong> {{ request.leave_type|title }}
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Dates:</strong> {{ request.start_date.strftime('%Y-%m-%d') }} to {{ request.end_date.strftime('%Y-%m-%d') }}
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Days:</strong> {{ request.days_requested }}
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Reason:</strong> {{ request.reason }}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+            <a href="{{ url_for('approve_leave', request_id=request.id) }}" style="background: #28a745; color: white; padding: 10px; border-radius: 4px; text-decoration: none; text-align: center;">
+                Approve
+            </a>
+            <a href="{{ url_for('reject_leave', request_id=request.id) }}" style="background: #dc3545; color: white; padding: 10px; border-radius: 4px; text-decoration: none; text-align: center;">
+                Reject
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
 {% else %}
 <p>No pending leave requests.</p>
 {% endif %}
@@ -136,4 +170,21 @@
 <p>You haven't submitted any leave requests yet.</p>
 {% endif %}
 {% endif %}
+
+<style>
+    /* Show/hide based on screen size */
+    @media (max-width: 768px) {
+        .desktop-view {
+            display: none;
+        }
+        .mobile-view {
+            display: block;
+        }
+    }
+    @media (min-width: 769px) {
+        .mobile-view {
+            display: none;
+        }
+    }
+</style>
 {% endblock %}
