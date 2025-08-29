@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block header %}Dashboard{% endblock %}
+
+{% block content %}
+<h2>Welcome to Hercules HR</h2>
+<p>Use the menu on the left to navigate through different sections of the system.</p>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 30px;">
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; border-left: 4px solid #3c8dbc;">
+        <h3>Employee Directory</h3>
+        <p>Manage all employee records</p>
+        <a href="{{ url_for('employee_directory') }}">View Directory</a>
+    </div>
+    
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; border-left: 4px solid #3c8dbc;">
+        <h3>Departments</h3>
+        <p>View and manage departments</p>
+        <a href="{{ url_for('department_directory') }}">View Departments</a>
+    </div>
+    
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; border-left: 4px solid #3c8dbc;">
+        <h3>Performance Reviews</h3>
+        <p>Manage employee performance reviews</p>
+        <a href="{{ url_for('performance_reviews') }}">View Reviews</a>
+    </div>
+    
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; border-left: 4px solid #3c8dbc;">
+        <h3>Leaves Management</h3>
+        <p>Manage employee leave requests</p>
+        <a href="{{ url_for('leaves') }}">View Leaves</a>
+    </div>
+</div>
+
+{% if current_user.is_admin %}
+<div style="background: #e8f4f8; padding: 20px; border-radius: 5px; margin-top: 30px; border-left: 4px solid #3c8dbc;">
+    <h3>Administrator Tools</h3>
+    <p>As an administrator, you have access to additional system functions.</p>
+    <div style="display: flex; gap: 10px; margin-top: 15px;">
+        <a href="{{ url_for('reports') }}" style="background: #3c8dbc; color: white; padding: 8px 15px; border-radius: 4px; text-decoration: none;">Generate Reports</a>
+        <a href="{{ url_for('settings') }}" style="background: #5bc0de; color: white; padding: 8px 15px; border-radius: 4px; text-decoration: none;">System Settings</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

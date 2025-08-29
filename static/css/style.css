@@ -40,3 +40,26 @@ footer {
     bottom: 0;
     width: 100%;
 }
+
+/* Better touch targets for mobile */
+@media (max-width: 768px) {
+    .sidebar-menu a {
+        padding: 16px 20px;
+    }
+
+    .hamburger-menu {
+        width: 60px;
+        height: 60px;
+    }
+
+    .alert {
+        padding: 15px;
+        font-size: 16px;
+    }
+
+    /* Larger tap targets for buttons */
+    button, .btn, a[role="button"] {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

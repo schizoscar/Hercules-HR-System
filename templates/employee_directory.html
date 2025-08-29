@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Employee Directory{% endblock %}
+
+{% block header %}Employee Directory{% endblock %}
+
+{% block content %}
+<h2>All Employees</h2>
+<table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+    <thead>
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Name</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Email</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Department</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Position</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for employee in employees %}
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.full_name }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.email }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.department }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.position }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Request Leave{% endblock %}
+
+{% block header %}Request Leave{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto;">
+    <h2>Request Leave</h2>
+    <form method="POST">
+        {{ form.hidden_tag() }}
+        
+        <div style="margin-bottom: 15px;">
+            <label for="start_date" style="display: block; margin-bottom: 5px;">Start Date</label>
+            {{ form.start_date(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;", type="date") }}
+            {% if form.start_date.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.start_date.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label for="end_date" style="display: block; margin-bottom: 5px;">End Date</label>
+            {{ form.end_date(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;", type="date") }}
+            {% if form.end_date.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.end_date.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label for="leave_type" style="display: block; margin-bottom: 5px;">Leave Type</label>
+            {{ form.leave_type(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
+            {% if form.leave_type.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.leave_type.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label for="reason" style="display: block; margin-bottom: 5px;">Reason</label>
+            {{ form.reason(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-height: 100px;", placeholder="Please provide a reason for your leave request") }}
+            {% if form.reason.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.reason.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="text-align: center;">
+            {{ form.submit(class="btn", style="background: #3c8dbc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;") }}
+            <a href="{{ url_for('leaves') }}" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 4px; text-decoration: none; display: inline-block; margin-left: 10px;">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+    // Set minimum date to today
+    document.addEventListener('DOMContentLoaded', function() {
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('start_date').setAttribute('min', today);
+        document.getElementById('end_date').setAttribute('min', today);
+        
+        // Update end date min when start date changes
+        document.getElementById('start_date').addEventListener('change', function() {
+            document.getElementById('end_date').setAttribute('min', this.value);
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}All Leaves{% endblock %}
+
+{% block header %}All Leaves{% endblock %}
+
+{% block content %}
+<h2>All Leave Requests</h2>
+
+<!-- Export Form -->
+<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+    <h3>Export Leaves</h3>
+    <form method="GET" action="{{ url_for('export_leaves') }}">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div>
+                <label for="start_date" style="display: block; margin-bottom: 5px;">Start Date</label>
+                <input type="date" id="start_date" name="start_date" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div>
+                <label for="end_date" style="display: block; margin-bottom: 5px;">End Date</label>
+                <input type="date" id="end_date" name="end_date" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div style="align-self: end;">
+                <button type="submit" style="background: #28a745; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer;">
+                    Export CSV
+                </button>
+            </div>
+            <div style="align-self: end;">
+                <a href="{{ url_for('export_leaves') }}" style="background: #17a2b8; color: white; padding: 8px 15px; border: none; border-radius: 4px; text-decoration: none; display: inline-block;">
+                    Export All
+                </a>
+            </div>
+        </div>
+    </form>
+</div>
+
+{% if all_requests %}
+<table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+    <thead>
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Leave Type</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Start Date</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">End Date</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Days</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Status</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Reason</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Submitted</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for request in all_requests %}
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.employee.full_name }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.leave_type|title }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%Y-%m-%d') }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%Y-%m-%d') }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.days_requested }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                <span style="
+                    padding: 3px 8px;
+                    border-radius: 3px;
+                    font-size: 0.8rem;
+                    {% if request.status == 'approved' %}
+                        background: #d4edda; color: #155724;
+                    {% elif request.status == 'rejected' %}
+                        background: #f8d7da; color: #721c24;
+                    {% else %}
+                        background: #fff3cd; color: #856404;
+                    {% endif %}
+                ">
+                    {{ request.status|title }}
+                </span>
+            </td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.reason|truncate(30) }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.created_at.strftime('%Y-%m-%d') }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No leave requests found.</p>
+{% endif %}
+{% endblock %}

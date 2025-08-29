@@ -31,6 +31,8 @@
     <Content Include="static\js\main.js" />
     <Content Include="templates\base.html" />
     <Content Include="templates\*.html" />
+    <Content Include="templates\request_leave.html" />
+    <Content Include="templates\all_leaves.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->
   <ItemGroup>

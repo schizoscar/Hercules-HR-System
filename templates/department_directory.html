@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Department Directory{% endblock %}
+
+{% block header %}Department Directory{% endblock %}
+
+{% block content %}
+<h2>All Departments</h2>
+<ul style="list-style: none; padding: 0; margin-top: 20px;">
+    {% for department in departments %}
+    <li style="padding: 10px; border-bottom: 1px solid #ddd; background: #f9f9f9; margin-bottom: 5px;">
+        {{ department }}
+    </li>
+    {% endfor %}
+</ul>
+{% endblock %}

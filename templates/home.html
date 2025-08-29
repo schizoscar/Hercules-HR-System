@@ -2,11 +2,16 @@
 
 {% block title %}Home{% endblock %}
 
+{% block header %}Hercules HR - Home{% endblock %}
+
 {% block content %}
-<div class="container">
-    <h1>Welcome to Hercules HR System</h1>
-    <div class="alert alert-info">
-        Employee Management Portal
-    </div>
+<div style="text-align: center; padding: 50px 0;">
+    <h2>Welcome to Hercules HR</h2>
+    <p>Your comprehensive human resources management solution</p>
+    {% if not current_user.is_authenticated %}
+    <p><a href="{{ url_for('login') }}">Login</a> to access the system</p>
+    {% else %}
+    <p>Use the menu on the left to navigate through the system</p>
+    {% endif %}
 </div>
 {% endblock %}
