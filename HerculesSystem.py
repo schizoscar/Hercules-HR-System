@@ -857,8 +857,43 @@ def all_leaves():
         flash('You do not have permission to view all leaves.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Get all leave requests, ordered by latest first
-    all_requests = LeaveRequest.query.order_by(LeaveRequest.created_at.desc()).all()
+    # Get filter parameters
+    employee_name = request.args.get('employee_name', '')
+    leave_type = request.args.get('leave_type', '')
+    status = request.args.get('status', '')
+    start_date_filter = request.args.get('start_date_filter', '')
+    end_date_filter = request.args.get('end_date_filter', '')
+    
+    # Build query
+    query = LeaveRequest.query
+    
+    # Apply filters
+    if employee_name:
+        query = query.join(Employee).filter(Employee.full_name.ilike(f'%{employee_name}%'))
+    
+    if leave_type:
+        query = query.filter(LeaveRequest.leave_type == leave_type)
+    
+    if status:
+        query = query.filter(LeaveRequest.status == status)
+    
+    if start_date_filter:
+        try:
+            start_date = datetime.strptime(start_date_filter, '%Y-%m-%d').date()
+            query = query.filter(LeaveRequest.start_date >= start_date)
+        except ValueError:
+            pass
+    
+    if end_date_filter:
+        try:
+            end_date = datetime.strptime(end_date_filter, '%Y-%m-%d').date()
+            query = query.filter(LeaveRequest.start_date <= end_date)
+        except ValueError:
+            pass
+    
+    # Get the filtered leaves
+    all_requests = query.order_by(LeaveRequest.created_at.desc()).all()
+    
     return render_template('all_leaves.html', all_requests=all_requests)
 
 @app.route('/export_leaves')
@@ -868,13 +903,45 @@ def export_leaves():
         flash('You do not have permission to export leaves.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Get date range parameters
+    # Get filter parameters
+    employee_name = request.args.get('employee_name', '')
+    leave_type = request.args.get('leave_type', '')
+    status = request.args.get('status', '')
+    start_date_filter = request.args.get('start_date_filter', '')
+    end_date_filter = request.args.get('end_date_filter', '')
+    
+    # Get date range parameters for export
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     
     # Build query
     query = LeaveRequest.query
     
+    # Apply filters
+    if employee_name:
+        query = query.join(Employee).filter(Employee.full_name.ilike(f'%{employee_name}%'))
+    
+    if leave_type:
+        query = query.filter(LeaveRequest.leave_type == leave_type)
+    
+    if status:
+        query = query.filter(LeaveRequest.status == status)
+    
+    if start_date_filter:
+        try:
+            start_date = datetime.strptime(start_date_filter, '%Y-%m-%d').date()
+            query = query.filter(LeaveRequest.start_date >= start_date)
+        except ValueError:
+            pass
+    
+    if end_date_filter:
+        try:
+            end_date = datetime.strptime(end_date_filter, '%Y-%m-%d').date()
+            query = query.filter(LeaveRequest.start_date <= end_date)
+        except ValueError:
+            pass
+    
+    # Apply export date range if provided
     if start_date_str:
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
@@ -897,7 +964,7 @@ def export_leaves():
     writer = csv.writer(output)
     
     # Write header
-    writer.writerow(['Employee Name', 'Leave Type', 'Start Date', 'End Date', 
+    writer.writerow(['Employee Name', 'Leave Type', 'Compassionate Type', 'Start Date', 'End Date', 
                      'Days Requested', 'Status', 'Reason', 'Submitted On', 'Approved/Rejected On'])
     
     # Write data
@@ -905,6 +972,7 @@ def export_leaves():
         writer.writerow([
             leave.employee.full_name,
             leave.leave_type.title(),
+            leave.compassionate_type.title() if leave.compassionate_type else 'N/A',
             leave.start_date.strftime('%Y-%m-%d'),
             leave.end_date.strftime('%Y-%m-%d'),
             leave.days_requested,
@@ -914,10 +982,30 @@ def export_leaves():
             leave.approved_at.strftime('%Y-%m-%d %H:%M') if leave.approved_at else 'N/A'
         ])
     
+    # Create filename with filter info
+    filename_parts = ['leaves_export']
+    
+    if employee_name:
+        filename_parts.append(f'employee_{employee_name}')
+    
+    if leave_type:
+        filename_parts.append(f'type_{leave_type}')
+    
+    if status:
+        filename_parts.append(f'status_{status}')
+    
+    if start_date_filter:
+        filename_parts.append(f'from_{start_date_filter}')
+    
+    if end_date_filter:
+        filename_parts.append(f'to_{end_date_filter}')
+    
+    filename = '_'.join(filename_parts) + '.csv'
+    
     # Create response
     output.seek(0)
     response = make_response(output.getvalue())
-    response.headers['Content-Disposition'] = 'attachment; filename=leaves_export.csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
     response.headers['Content-type'] = 'text/csv'
     
     return response

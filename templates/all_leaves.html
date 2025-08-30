@@ -7,18 +7,88 @@
 {% block content %}
 <h2>All Leave Requests</h2>
 
+<!-- Filter Form -->
+<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+    <h3>Filter Leaves</h3>
+    <form method="GET" action="{{ url_for('all_leaves') }}">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div>
+                <label for="employee_name" style="display: block; margin-bottom: 5px;">Employee Name</label>
+                <input type="text" id="employee_name" name="employee_name" value="{{ request.args.get('employee_name', '') }}" 
+                       placeholder="Search by name" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 150px;">
+            </div>
+            
+            <div>
+                <label for="leave_type" style="display: block; margin-bottom: 5px;">Leave Type</label>
+                <select id="leave_type" name="leave_type" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 150px;">
+                    <option value="">All Types</option>
+                    <option value="annual" {% if request.args.get('leave_type') == 'annual' %}selected{% endif %}>Annual Leave</option>
+                    <option value="medical" {% if request.args.get('leave_type') == 'medical' %}selected{% endif %}>Medical Leave</option>
+                    <option value="maternity" {% if request.args.get('leave_type') == 'maternity' %}selected{% endif %}>Maternity Leave</option>
+                    <option value="compassionate" {% if request.args.get('leave_type') == 'compassionate' %}selected{% endif %}>Compassionate Leave</option>
+                    <option value="marriage" {% if request.args.get('leave_type') == 'marriage' %}selected{% endif %}>Marriage Leave</option>
+                    <option value="hospitalised" {% if request.args.get('leave_type') == 'hospitalised' %}selected{% endif %}>Hospitalised Leave</option>
+                    <option value="socso_mc" {% if request.args.get('leave_type') == 'socso_mc' %}selected{% endif %}>SOCSO MC</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="status" style="display: block; margin-bottom: 5px;">Status</label>
+                <select id="status" name="status" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 120px;">
+                    <option value="">All Status</option>
+                    <option value="pending" {% if request.args.get('status') == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="approved" {% if request.args.get('status') == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="rejected" {% if request.args.get('status') == 'rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="start_date_filter" style="display: block; margin-bottom: 5px;">Start Date From</label>
+                <input type="date" id="start_date_filter" name="start_date_filter" value="{{ request.args.get('start_date_filter', '') }}" 
+                       style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <div>
+                <label for="end_date_filter" style="display: block; margin-bottom: 5px;">Start Date To</label>
+                <input type="date" id="end_date_filter" name="end_date_filter" value="{{ request.args.get('end_date_filter', '') }}" 
+                       style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <div style="align-self: end;">
+                <button type="submit" style="background: #3c8dbc; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer;">
+                    Apply Filters
+                </button>
+            </div>
+            
+            {% if request.args.get('employee_name') or request.args.get('leave_type') or request.args.get('status') or request.args.get('start_date_filter') or request.args.get('end_date_filter') %}
+            <div style="align-self: end;">
+                <a href="{{ url_for('all_leaves') }}" style="background: #6c757d; color: white; padding: 8px 15px; border: none; border-radius: 4px; text-decoration: none; display: inline-block;">
+                    Clear Filters
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
 <!-- Export Form -->
 <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
     <h3>Export Leaves</h3>
     <form method="GET" action="{{ url_for('export_leaves') }}">
+        <input type="hidden" name="employee_name" value="{{ request.args.get('employee_name', '') }}">
+        <input type="hidden" name="leave_type" value="{{ request.args.get('leave_type', '') }}">
+        <input type="hidden" name="status" value="{{ request.args.get('status', '') }}">
+        <input type="hidden" name="start_date_filter" value="{{ request.args.get('start_date_filter', '') }}">
+        <input type="hidden" name="end_date_filter" value="{{ request.args.get('end_date_filter', '') }}">
+        
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <div>
-                <label for="start_date" style="display: block; margin-bottom: 5px;">Start Date</label>
-                <input type="date" id="start_date" name="start_date" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <label for="export_start_date" style="display: block; margin-bottom: 5px;">Start Date</label>
+                <input type="date" id="export_start_date" name="start_date" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
             </div>
             <div>
-                <label for="end_date" style="display: block; margin-bottom: 5px;">End Date</label>
-                <input type="date" id="end_date" name="end_date" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <label for="export_end_date" style="display: block; margin-bottom: 5px;">End Date</label>
+                <input type="date" id="export_end_date" name="end_date" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
             </div>
             <div style="align-self: end;">
                 <button type="submit" style="background: #28a745; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer;">
@@ -26,8 +96,9 @@
                 </button>
             </div>
             <div style="align-self: end;">
-                <a href="{{ url_for('export_leaves') }}" style="background: #17a2b8; color: white; padding: 8px 15px; border: none; border-radius: 4px; text-decoration: none; display: inline-block;">
-                    Export All
+                <a href="{{ url_for('export_leaves') }}?employee_name={{ request.args.get('employee_name', '') }}&leave_type={{ request.args.get('leave_type', '') }}&status={{ request.args.get('status', '') }}&start_date_filter={{ request.args.get('start_date_filter', '') }}&end_date_filter={{ request.args.get('end_date_filter', '') }}" 
+                   style="background: #17a2b8; color: white; padding: 8px 15px; border: none; border-radius: 4px; text-decoration: none; display: inline-block;">
+                    Export All Filtered
                 </a>
             </div>
         </div>
@@ -35,6 +106,15 @@
 </div>
 
 {% if all_requests %}
+<p style="margin-bottom: 15px; font-style: italic;">
+    Showing {{ all_requests|length }} leave request(s)
+    {% if request.args.get('employee_name') %} for employee "{{ request.args.get('employee_name') }}"{% endif %}
+    {% if request.args.get('leave_type') %} with type "{{ request.args.get('leave_type') }}"{% endif %}
+    {% if request.args.get('status') %} with status "{{ request.args.get('status') }}"{% endif %}
+    {% if request.args.get('start_date_filter') %} from {{ request.args.get('start_date_filter') }}{% endif %}
+    {% if request.args.get('end_date_filter') %} to {{ request.args.get('end_date_filter') }}{% endif %}
+</p>
+
 <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
     <thead>
         <tr style="background: #f5f5f5;">
