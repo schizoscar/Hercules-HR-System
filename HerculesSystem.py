@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField
-from wtforms.validators import DataRequired, Length
+from wtforms.validators import DataRequired, Length, Email
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 import os
@@ -12,7 +12,11 @@ import socket
 from http.client import HTTPException
 from io import StringIO
 import csv
-
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import random
+import string
 # handler for the bad requests
 import werkzeug.serving
 
@@ -26,6 +30,56 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
+# Email configuration (add to config)
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'  # You can use other providers
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'your_email@gmail.com'  # Set this
+app.config['MAIL_PASSWORD'] = 'your_app_password'  # Set this (use App Password for Gmail)
+
+def send_email(to_email, subject, body):
+    """Send email using SMTP"""
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = app.config['MAIL_USERNAME']
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT'])
+        server.starttls()
+        server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
+        text = msg.as_string()
+        server.sendmail(app.config['MAIL_USERNAME'], to_email, text)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
+
+def send_leave_status_email(employee, leave_request, status):
+    """Send email about leave status"""
+    subject = f"Your Leave Request Has Been {status.title()}"
+    body = f"""
+Dear {employee.full_name},
+
+Your leave request has been {status}.
+
+Details:
+- Type: {leave_request.leave_type.title()}
+- From: {leave_request.start_date.strftime('%Y-%m-%d')}
+- To: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Days: {leave_request.days_requested}
+- Reason: {leave_request.reason}
+
+Status: {status.title()}
+
+Thank you,
+HR Department
+"""
+    return send_email(employee.email, subject, body)
+
 # Database Models
 class Employee(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -38,6 +92,11 @@ class Employee(UserMixin, db.Model):
     hire_date = db.Column(db.Date)
     is_admin = db.Column(db.Boolean, default=False)
     user_type = db.Column(db.String(20), default='employee')  # admin, supervisor, office, factory
+    
+    def generate_temp_password(self):
+        """Generate a temporary password"""
+        characters = string.ascii_letters + string.digits
+        return ''.join(random.choice(characters) for i in range(8))
 
 # Forms
 class LoginForm(FlaskForm):
@@ -47,7 +106,8 @@ class LoginForm(FlaskForm):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return Employee.query.get(int(user_id))
+    return db.session.get(Employee, int(user_id))
+
 
 @app.context_processor
 def inject_now():
@@ -90,6 +150,23 @@ def add_is_admin_column():
         conn.close()
     except Exception as e:
         print(f"Error checking/adding columns: {e}")
+
+class AddEmployeeForm(FlaskForm):
+    full_name = StringField('Full Name', validators=[DataRequired()])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    department = StringField('Department', validators=[DataRequired()])
+    position = StringField('Position', validators=[DataRequired()])
+    user_type = SelectField('User Type', choices=[
+        ('office', 'Office Employee'),
+        ('factory', 'Factory Worker'),
+        ('supervisor', 'Supervisor')
+    ], validators=[DataRequired()])
+    submit = SubmitField('Add Employee')
+
+class BulkAddEmployeesForm(FlaskForm):
+    employee_data = TextAreaField('Employee Data', validators=[DataRequired()], 
+        description="Format: Full Name,Email,Department,Position,User Type (one per line)")
+    submit = SubmitField('Add Employees')
 
 # Add this right before your route definitions
 with app.app_context():
@@ -274,6 +351,11 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Factory workers only see leaves management
+    if current_user.user_type == 'factory':
+        return render_template('factory_dashboard.html')
+    
+    # Regular dashboard for other users
     return render_template('dashboard.html')
 
 # HR Directory Pages
@@ -347,13 +429,14 @@ def approve_leave(request_id):
     leave_request.status = 'approved'
     leave_request.approved_at = datetime.utcnow()
     
-    # Here you would deduct from the employee's leave balance
-    # For now,  just mark it as approved and deducted immediately
-    # In a real system, you'd update the employee's leave balance
-    
     db.session.commit()
     
-    flash('Leave request approved successfully. Leave balance has been deducted.', 'success')
+    # Send email notification
+    if send_leave_status_email(leave_request.employee, leave_request, 'approved'):
+        flash('Leave request approved successfully. Email notification sent.', 'success')
+    else:
+        flash('Leave request approved successfully, but failed to send email notification.', 'warning')
+    
     return redirect(url_for('leaves'))
 
 @app.route('/reject_leave/<int:request_id>')
@@ -365,10 +448,166 @@ def reject_leave(request_id):
     
     leave_request = LeaveRequest.query.get_or_404(request_id)
     leave_request.status = 'rejected'
+    leave_request.approved_at = datetime.utcnow()
+    
     db.session.commit()
     
-    flash('Leave request rejected.', 'info')
+    # Send email notification
+    if send_leave_status_email(leave_request.employee, leave_request, 'rejected'):
+        flash('Leave request rejected. Email notification sent.', 'info')
+    else:
+        flash('Leave request rejected, but failed to send email notification.', 'warning')
+    
     return redirect(url_for('leaves'))
+
+@app.route('/manage_employees')
+@login_required
+def manage_employees():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to manage employees.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    employees = Employee.query.filter(Employee.user_type != 'admin').all()
+    return render_template('manage_employees.html', employees=employees)
+
+@app.route('/add_employee', methods=['GET', 'POST'])
+@login_required
+def add_employee():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to add employees.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    form = AddEmployeeForm()
+    
+    if form.validate_on_submit():
+        # Generate username from email
+        username = form.email.data.split('@')[0]
+        
+        # Check if username already exists
+        if Employee.query.filter_by(username=username).first():
+            flash('Username already exists. Please use a different email.', 'danger')
+            return render_template('add_employee.html', form=form)
+        
+        # Generate temporary password
+        temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(8))
+        
+        employee = Employee(
+            username=username,
+            password=generate_password_hash(temp_password),
+            full_name=form.full_name.data,
+            email=form.email.data,
+            department=form.department.data,
+            position=form.position.data,
+            user_type=form.user_type.data,
+            hire_date=datetime.utcnow().date()
+        )
+        
+        db.session.add(employee)
+        db.session.commit()
+        
+        # Send welcome email with credentials
+        subject = "Your HR Nexus Account Has Been Created"
+        body = f"""
+Dear {form.full_name.data},
+
+Your HR Nexus account has been created.
+
+Login details:
+Username: {username}
+Password: {temp_password}
+
+Please change your password after first login.
+
+You can access the system at: http://your-server-url
+
+Thank you,
+HR Department
+"""
+        if send_email(form.email.data, subject, body):
+            flash('Employee added successfully. Login details sent via email.', 'success')
+        else:
+            flash(f'Employee added successfully. Login details: Username: {username}, Password: {temp_password}. Failed to send email.', 'warning')
+        
+        return redirect(url_for('manage_employees'))
+    
+    return render_template('add_employee.html', form=form)
+
+@app.route('/bulk_add_employees', methods=['GET', 'POST'])
+@login_required
+def bulk_add_employees():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to add employees.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    form = BulkAddEmployeesForm()
+    
+    if form.validate_on_submit():
+        lines = form.employee_data.data.strip().split('\n')
+        success_count = 0
+        error_count = 0
+        
+        for line in lines:
+            try:
+                data = [item.strip() for item in line.split(',')]
+                if len(data) != 5:
+                    error_count += 1
+                    continue
+                
+                full_name, email, department, position, user_type = data
+                
+                # Generate username from email
+                username = email.split('@')[0]
+                
+                # Check if user already exists
+                if Employee.query.filter((Employee.username == username) | (Employee.email == email)).first():
+                    error_count += 1
+                    continue
+                
+                # Generate temporary password
+                temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(8))
+                
+                employee = Employee(
+                    username=username,
+                    password=generate_password_hash(temp_password),
+                    full_name=full_name,
+                    email=email,
+                    department=department,
+                    position=position,
+                    user_type=user_type,
+                    hire_date=datetime.utcnow().date()
+                )
+                
+                db.session.add(employee)
+                success_count += 1
+                
+                # Send welcome email
+                subject = "Your HR Nexus Account Has Been Created"
+                body = f"""
+Dear {full_name},
+
+Your HR Nexus account has been created.
+
+Login details:
+Username: {username}
+Password: {temp_password}
+
+Please change your password after first login.
+
+You can access the system at: http://your-server-url
+
+Thank you,
+HR Department
+"""
+                send_email(email, subject, body)
+                
+            except:
+                error_count += 1
+        
+        db.session.commit()
+        flash(f'Added {success_count} employees successfully. {error_count} failed.', 'success')
+        return redirect(url_for('manage_employees'))
+    
+    return render_template('bulk_add_employees.html', form=form)
 
 @app.route('/all_leaves')
 @login_required
