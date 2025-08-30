@@ -3,55 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HR Nexus - {% block title %}Home{% endblock %}</title>
+    <title>Hercules HR - {% block title %}Home{% endblock %}</title>
     <style>
+        :root {
+            --primary: #4361ee;
+            --secondary: #3a0ca3;
+            --accent: #7209b7;
+            --success: #4cc9f0;
+            --danger: #f72585;
+            --warning: #fca311;
+            --info: #4895ef;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --gray: #6c757d;
+            --gradient-primary: linear-gradient(135deg, #4361ee, #3a0ca3);
+            --gradient-accent: linear-gradient(135deg, #7209b7, #f72585);
+            --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.07);
+            --shadow-md: 0 8px 15px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 15px 25px rgba(0, 0, 0, 0.15);
+            --border-radius: 12px;
+            --border-radius-lg: 16px;
+            --border-radius-xl: 20px;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
         }
-        
+
         body {
             display: flex;
             min-height: 100vh;
-            background-color: #f5f5f5;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+            color: var(--dark);
+            line-height: 1.6;
         }
         
-        /* Hamburger menu */
+        /* Glassmorphism effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* Hamburger menu - Modern version */
         .hamburger-menu {
             position: fixed;
             top: 20px;
             left: 20px;
             z-index: 1000;
             cursor: pointer;
-            background: #2c3e50;
+            background: var(--gradient-primary);
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 56px;
+            height: 56px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            box-shadow: var(--shadow-md);
+            transition: all 0.3s ease;
+        }
+        
+        .hamburger-menu:hover {
+            transform: scale(1.05);
+            box-shadow: var(--shadow-lg);
         }
         
         .hamburger-menu span {
             display: block;
-            width: 25px;
-            height: 3px;
+            width: 24px;
+            height: 2px;
             background: #fff;
             position: relative;
-            transition: all 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .hamburger-menu span:before,
         .hamburger-menu span:after {
             content: '';
             position: absolute;
-            width: 25px;
-            height: 3px;
+            width: 24px;
+            height: 2px;
             background: #fff;
-            transition: all 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
         .hamburger-menu span:before {
@@ -62,19 +100,34 @@
             top: 8px;
         }
         
-        /* Sidebar */
+        .hamburger-menu.open span {
+            background: transparent;
+        }
+        
+        .hamburger-menu.open span:before {
+            transform: rotate(45deg);
+            top: 0;
+        }
+        
+        .hamburger-menu.open span:after {
+            transform: rotate(-45deg);
+            top: 0;
+        }
+        
+        /* Sidebar - Modern version */
         .sidebar {
             position: fixed;
             left: 0;
             top: 0;
             height: 100%;
-            width: 250px;
-            background: #2c3e50;
+            width: 280px;
+            background: var(--gradient-primary);
             color: #fff;
             transform: translateX(-100%);
-            transition: transform 0.3s ease;
-            z-index: 999;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 998;
             overflow-y: auto;
+            box-shadow: var(--shadow-lg);
         }
         
         .sidebar.open {
@@ -82,15 +135,18 @@
         }
         
         .sidebar-header {
-            padding: 20px;
-            background: #1a2530;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.1);
             text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         
         .sidebar-header h2 {
             margin: 0;
             font-size: 1.5rem;
+            font-weight: 700;
             color: #fff;
+            letter-spacing: 0.5px;
         }
         
         .sidebar-menu {
@@ -102,142 +158,229 @@
         }
         
         .sidebar-menu li {
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
         
         .sidebar-menu a {
-            display: block;
-            padding: 12px 20px;
-            color: #b8c7ce;
+            display: flex;
+            align-items: center;
+            padding: 14px 24px;
+            color: rgba(255, 255, 255, 0.85);
             text-decoration: none;
-            transition: all 0.3s;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            border-left: 4px solid transparent;
         }
         
         .sidebar-menu a:hover,
         .sidebar-menu a.active {
-            background: #1e2a36;
+            background: rgba(255, 255, 255, 0.1);
             color: #fff;
-            border-left: 4px solid #3c8dbc;
+            border-left: 4px solid var(--accent);
+            padding-left: 28px;
         }
         
         .sidebar-menu i {
-            margin-right: 10px;
+            margin-right: 12px;
+            width: 20px;
+            text-align: center;
         }
         
         /* Main content */
         .main-content {
             flex: 1;
-            padding: 20px;
+            padding: 24px;
             margin-left: 0;
-            transition: margin-left 0.3s ease;
-            padding-left: 80px; /* Added padding to prevent overlap */
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            padding-left: 96px;
         }
         
         .main-content.shifted {
-            margin-left: 250px;
-            padding-left: 20px; /* Reset padding when sidebar is open */
+            margin-left: 280px;
+            padding-left: 24px;
         }
         
-        /* Header */
+        /* Header - Modern version */
         .header {
-            background: #fff;
-            padding: 15px 20px;
-            border-bottom: 1px solid #e0e0e0;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 20px 24px;
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-sm);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         
         .header h1 {
             font-size: 1.8rem;
-            color: #2c3e50;
+            font-weight: 700;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
         
         .user-info {
             display: flex;
             align-items: center;
+            gap: 16px;
         }
         
         .user-info span {
-            margin-right: 15px;
-            color: #2c3e50;
+            color: var(--dark);
+            font-weight: 500;
         }
         
-        /* Content */
+        .user-info .admin-badge {
+            background: var(--gradient-accent);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .user-info a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+        
+        .user-info a:hover {
+            background: rgba(67, 97, 238, 0.1);
+        }
+        
+        /* Content - Modern version */
         .content {
-            background: #fff;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            padding: 28px;
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         
-        /* Flash messages */
+        /* Flash messages - Modern version */
         .flash-messages {
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         
         .alert {
-            padding: 10px 15px;
-            border-radius: 4px;
-            margin-bottom: 10px;
+            padding: 16px 20px;
+            border-radius: var(--border-radius);
+            margin-bottom: 16px;
+            font-weight: 500;
+            box-shadow: var(--shadow-sm);
+            border: none;
         }
         
         .alert-success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: rgba(76, 201, 240, 0.15);
+            color: #0a58ca;
+            border-left: 4px solid var(--success);
         }
         
         .alert-danger {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: rgba(247, 37, 133, 0.15);
+            color: #dc3545;
+            border-left: 4px solid var(--danger);
         }
         
         .alert-info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
+            background: rgba(72, 149, 239, 0.15);
+            color: #0dcaf0;
+            border-left: 4px solid var(--info);
+        }
+        
+        .alert-warning {
+            background: rgba(252, 163, 17, 0.15);
+            color: #ffc107;
+            border-left: 4px solid var(--warning);
+        }
+        
+        /* Buttons - Modern style */
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: var(--border-radius);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .btn-secondary {
+            background: var(--gradient-accent);
+            color: white;
         }
         
         /* Responsive */
         @media (max-width: 768px) {
             .main-content {
-                padding-left: 70px; /* Less padding on mobile */
+                padding: 16px;
+                padding-left: 76px;
             }
             
             .main-content.shifted {
                 margin-left: 0;
-                padding-left: 20px;
+                padding-left: 16px;
             }
             
             .sidebar.open {
                 width: 100%;
             }
             
-            /* Better touch targets for mobile */
             .sidebar-menu a {
-                padding: 16px 20px;
+                padding: 16px 24px;
             }
             
             .hamburger-menu {
-                width: 60px;
-                height: 60px;
+                width: 52px;
+                height: 52px;
             }
             
             .alert {
-                padding: 15px;
-                font-size: 16px;
+                padding: 14px;
+                font-size: 15px;
             }
             
-            /* Larger tap targets for buttons */
-            button, .btn, a[role="button"] {
-                min-height: 44px;
-                min-width: 44px;
+            .header {
+                flex-direction: column;
+                gap: 16px;
+                align-items: flex-start;
             }
+            
+            .user-info {
+                flex-wrap: wrap;
+            }
+        }
+
+        /* Animation for page transitions */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .content {
+            animation: fadeIn 0.4s ease-out;
         }
     </style>
 </head>
@@ -250,26 +393,26 @@
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h2>HR Nexus</h2>
+            <h2>Hercules HR</h2>
         </div>
         <div class="sidebar-menu">
             <ul>
-                <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+                <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">📊 Dashboard</a></li>
                 
                 {% if current_user.is_authenticated and current_user.user_type == 'admin' %}
-                <li><a href="{{ url_for('manage_employees') }}" class="{% if request.endpoint == 'manage_employees' %}active{% endif %}">Manage Employees</a></li>
-                <li><a href="{{ url_for('add_employee') }}" class="{% if request.endpoint == 'add_employee' %}active{% endif %}">Add Employee</a></li>
-                <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">Bulk Add Employees</a></li>
+                <li><a href="{{ url_for('manage_employees') }}" class="{% if request.endpoint == 'manage_employees' %}active{% endif %}">👥 Manage Employees</a></li>
+                <li><a href="{{ url_for('add_employee') }}" class="{% if request.endpoint == 'add_employee' %}active{% endif %}">➕ Add Employee</a></li>
+                <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">📦 Bulk Add Employees</a></li>
                 {% endif %}
                 
-                <li><a href="{{ url_for('employee_directory') }}" class="{% if request.endpoint == 'employee_directory' %}active{% endif %}">Employee Directory</a></li>
-                <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">Departments</a></li>
-                <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">Performance Reviews</a></li>
-                <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">Leaves Management</a></li>
-                <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">Recruitment</a></li>
-                <li><a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">Reports</a></li>
-                <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">Settings</a></li>
-                <li><a href="{{ url_for('logout') }}">Logout</a></li>
+                <li><a href="{{ url_for('employee_directory') }}" class="{% if request.endpoint == 'employee_directory' %}active{% endif %}">📋 Employee Directory</a></li>
+                <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">🏢 Departments</a></li>
+                <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">⭐ Performance Reviews</a></li>
+                <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">🌴 Leaves Management</a></li>
+                <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">💼 Recruitment</a></li>
+                <li><a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">📈 Reports</a></li>
+                <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
+                <li><a href="{{ url_for('logout') }}">🚪 Logout</a></li>
             </ul>
         </div>
     </div>
@@ -277,12 +420,12 @@
     <!-- Main Content -->
     <div class="main-content" id="mainContent">
         <div class="header">
-            <h1>{% block header %}HR Nexus{% endblock %}</h1>
+            <h1>{% block header %}Hercules HR{% endblock %}</h1>
             <div class="user-info">
                 {% if current_user.is_authenticated %}
-                <span>{{ current_user.full_name }}</span>
-                {% if current_user.is_admin %}
-                <span style="background: #3c8dbc; color: white; padding: 3px 8px; border-radius: 3px; font-size: 0.8rem;">Admin</span>
+                <span>👤 {{ current_user.full_name }}</span>
+                {% if current_user.user_type == 'admin' %}
+                <span class="admin-badge">ADMIN</span>
                 {% endif %}
                 <a href="{{ url_for('logout') }}">Logout</a>
                 {% else %}
@@ -311,8 +454,6 @@
         document.getElementById('hamburgerMenu').addEventListener('click', function () {
             document.getElementById('sidebar').classList.toggle('open');
             document.getElementById('mainContent').classList.toggle('shifted');
-
-            // Animate hamburger icon
             this.classList.toggle('open');
         });
 
