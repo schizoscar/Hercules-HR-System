@@ -7,7 +7,8 @@
 {% block content %}
 <div style="max-width: 600px; margin: 0 auto;">
     <h2>Request Leave</h2>
-    <form method="POST">
+    <!-- Add enctype="multipart/form-data" to handle file uploads -->
+    <form method="POST" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
         
         <div style="margin-bottom: 15px;">
@@ -36,10 +37,23 @@
         
         <div style="margin-bottom: 15px;">
             <label for="leave_type" style="display: block; margin-bottom: 5px;">Leave Type</label>
-            {{ form.leave_type(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
+            {{ form.leave_type(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;", id="leave_type_select") }}
             {% if form.leave_type.errors %}
                 <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
                     {% for error in form.leave_type.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Compassionate Type Field (initially hidden) -->
+        <div id="compassionate_type_container" style="margin-bottom: 15px; display: none;">
+            <label for="compassionate_type" style="display: block; margin-bottom: 5px;">Compassionate Leave Type</label>
+            {{ form.compassionate_type(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
+            {% if form.compassionate_type.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.compassionate_type.errors %}
                         {{ error }}
                     {% endfor %}
                 </div>
@@ -57,6 +71,19 @@
                 </div>
             {% endif %}
         </div>
+
+        <!-- Add file upload field -->
+        <div style="margin-bottom: 15px;">
+            <label for="attachment" style="display: block; margin-bottom: 5px;">Attachment (if any)</label>
+            {{ form.attachment(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
+            {% if form.attachment.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.attachment.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
         
         <div style="text-align: center;">
             {{ form.submit(class="btn", style="background: #3c8dbc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;") }}
@@ -66,16 +93,33 @@
 </div>
 
 <script>
-    // Set minimum date to today
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('start_date').setAttribute('min', today);
         document.getElementById('end_date').setAttribute('min', today);
-        
+
         // Update end date min when start date changes
-        document.getElementById('start_date').addEventListener('change', function() {
+        document.getElementById('start_date').addEventListener('change', function () {
             document.getElementById('end_date').setAttribute('min', this.value);
         });
+
+        // Show/hide compassionate type based on leave type selection
+        const leaveTypeSelect = document.getElementById('leave_type_select');
+        const compassionateContainer = document.getElementById('compassionate_type_container');
+
+        function toggleCompassionateField() {
+            if (leaveTypeSelect.value === 'compassionate') {
+                compassionateContainer.style.display = 'block';
+            } else {
+                compassionateContainer.style.display = 'none';
+            }
+        }
+
+        // Initial check
+        toggleCompassionateField();
+
+        // Add event listener for changes
+        leaveTypeSelect.addEventListener('change', toggleCompassionateField);
     });
 </script>
 {% endblock %}

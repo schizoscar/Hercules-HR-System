@@ -29,6 +29,7 @@
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">End Date</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Days</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Reason</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Attachment</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Actions</th>
         </tr>
     </thead>
@@ -36,11 +37,25 @@
         {% for request in pending_requests %}
         <tr>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.employee.full_name }}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.leave_type|title }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                {{ request.leave_type|title }}
+                {% if request.compassionate_type %}
+                <br><small>({{ request.compassionate_type|title }})</small>
+                {% endif %}
+            </td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%Y-%m-%d') }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%Y-%m-%d') }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.days_requested }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.reason }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                {% if request.attachment_filename %}
+                    <a href="{{ url_for('download_attachment', filename=request.attachment_filename) }}" target="_blank" style="color: #3c8dbc; text-decoration: none;">
+                        View Attachment
+                    </a>
+                {% else %}
+                    None
+                {% endif %}
+            </td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">
                 <div style="display: flex; flex-direction: column; gap: 5px;">
                     <a href="{{ url_for('approve_leave', request_id=request.id) }}" style="background: #28a745; color: white; padding: 5px 10px; border-radius: 3px; text-decoration: none; text-align: center;">
@@ -65,6 +80,9 @@
         </div>
         <div style="margin-bottom: 10px;">
             <strong>Leave Type:</strong> {{ request.leave_type|title }}
+            {% if request.compassionate_type %}
+            <br><small>({{ request.compassionate_type|title }})</small>
+            {% endif %}
         </div>
         <div style="margin-bottom: 10px;">
             <strong>Dates:</strong> {{ request.start_date.strftime('%Y-%m-%d') }} to {{ request.end_date.strftime('%Y-%m-%d') }}
@@ -74,6 +92,16 @@
         </div>
         <div style="margin-bottom: 10px;">
             <strong>Reason:</strong> {{ request.reason }}
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Attachment:</strong>
+            {% if request.attachment_filename %}
+                <a href="{{ url_for('download_attachment', filename=request.attachment_filename) }}" target="_blank" style="color: #3c8dbc; text-decoration: none;">
+                    View Attachment
+                </a>
+            {% else %}
+                None
+            {% endif %}
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
             <a href="{{ url_for('approve_leave', request_id=request.id) }}" style="background: #28a745; color: white; padding: 10px; border-radius: 4px; text-decoration: none; text-align: center;">
@@ -105,16 +133,46 @@
     </thead>
     <tbody>
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Vacation</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Annual</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">20 days</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">5 days</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">15 days</td>
         </tr>
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Sick Leave</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">10 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Medical</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">14 days</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">2 days</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">8 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">12 days</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Maternity</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">90 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">0 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">90 days</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Compassionate</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">3 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">0 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">3 days</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Marriage</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">3 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">0 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">3 days</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Hospitalised</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">60 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">0 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">60 days</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">SOCSO MC</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Unlimited</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">0 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Unlimited</td>
         </tr>
     </tbody>
 </table>
@@ -142,10 +200,15 @@
     <tbody>
         {% for request in user_requests %}
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.leave_type|title }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                {{ request.leave_type|title }}
+                {% if request.compassionate_type %}
+                <br><small>({{ request.compassionate_type|title }})</small>
+                {% endif %}
+            </td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%Y-%m-%d') }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%Y-%m-%d') }}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ (request.end_date - request.start_date).days + 1 }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.days_requested }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">
                 <span style="
                     padding: 3px 8px;

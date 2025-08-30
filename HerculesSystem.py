@@ -1,10 +1,12 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, make_response
+from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField
+from flask_wtf.file import FileAllowed, FileField
+from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, FileField
 from wtforms.validators import DataRequired, Length, Email
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import os
 import sqlite3
@@ -17,6 +19,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import random
 import string
+import uuid
+
 # handler for the bad requests
 import werkzeug.serving
 
@@ -30,12 +34,16 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# Email configuration (add to config)
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'  # You can use other providers
+# Email configuration 
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'  # can use other providers
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = 'your_email@gmail.com'  # Set this
 app.config['MAIL_PASSWORD'] = 'your_app_password'  # Set this (use App Password for Gmail)
+
+# configuration for leave file uploads
+app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 def send_email(to_email, subject, body):
     """Send email using SMTP"""
@@ -146,6 +154,14 @@ def add_is_admin_column():
             cursor.execute("ALTER TABLE leave_request ADD COLUMN approved_at DATETIME")
             print("Added approved_at column to leave_request table")
         
+        if 'compassionate_type' not in leave_columns:
+            cursor.execute("ALTER TABLE leave_request ADD COLUMN compassionate_type VARCHAR(50)")
+            print("Added compassionate_type column to leave_request table")
+        
+        if 'attachment_filename' not in leave_columns:
+            cursor.execute("ALTER TABLE leave_request ADD COLUMN attachment_filename VARCHAR(255)")
+            print("Added attachment_filename column to leave_request table")
+        
         conn.commit()
         conn.close()
     except Exception as e:
@@ -216,29 +232,74 @@ class LeaveRequest(db.Model):
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
-    leave_type = db.Column(db.String(50), nullable=False)  # Vacation, Sick, Personal, etc.
+    leave_type = db.Column(db.String(50), nullable=False)
+    compassionate_type = db.Column(db.String(50))  # For compassionate leave sub-type
     reason = db.Column(db.Text)
-    status = db.Column(db.String(20), default='pending')  # pending, approved, rejected
-    days_requested = db.Column(db.Integer, nullable=False)  # Number of days requested
+    attachment_filename = db.Column(db.String(255))  # Store filename
+    status = db.Column(db.String(20), default='pending')
+    days_requested = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    approved_at = db.Column(db.DateTime)  # When it was approved
+    approved_at = db.Column(db.DateTime)
     
     # Relationship
     employee = db.relationship('Employee', backref=db.backref('leave_requests', lazy=True))
+
 
 class LeaveRequestForm(FlaskForm):
     start_date = DateField('Start Date', format='%Y-%m-%d', validators=[DataRequired()])
     end_date = DateField('End Date', format='%Y-%m-%d', validators=[DataRequired()])
     leave_type = SelectField('Leave Type', choices=[
-        ('vacation', 'Vacation Leave'),
-        ('sick', 'Sick Leave'),
-        ('personal', 'Personal Leave'),
-        ('other', 'Other')
+        ('annual', 'Annual Leave'),
+        ('medical', 'Medical Leave'),
+        ('maternity', 'Maternity Leave (90 days max)'),
+        ('compassionate', 'Compassionate Leave'),
+        ('marriage', 'Marriage Leave (3 days max)'),
+        ('hospitalised', 'Hospitalised Leave (60 days/year max)'),
+        ('socso_mc', 'SOCSO MC (No limit)')
     ], validators=[DataRequired()])
+    compassionate_type = SelectField('Compassionate Leave Type', choices=[
+        ('', 'Select relationship'),
+        ('child', 'Child'),
+        ('parents', 'Parents'),
+        ('husband', 'Husband'),
+        ('wife', 'Wife'),
+        ('grandparents', 'Grandparents'),
+        ('sibling', 'Sibling')
+    ], validators=[])
     reason = TextAreaField('Reason', validators=[DataRequired()])
+    attachment = FileField('Attachment (if needed)', validators=[
+        FileAllowed(['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'], 
+                   'Only images (JPG, PNG), PDF and Word documents are allowed')
+    ])
     submit = SubmitField('Submit Request')
 
 werkzeug.serving.WSGIRequestHandler.handle = handle_corrupted_headers
+
+def validate_leave_days(leave_type, days_requested, compassionate_type=None):
+    """Validate leave days based on leave type"""
+    max_days = {
+        'annual': 365,  # No specific limit for annual leave
+        'medical': 60,  # Typically 60 days per year for medical
+        'maternity': 90,
+        'compassionate': 3 if compassionate_type in ['child', 'parents', 'husband', 'wife'] else 1,
+        'marriage': 3,
+        'hospitalised': 60,
+        'socso_mc': 365  # No limit
+    }
+    
+    if leave_type not in max_days:
+        return False, "Invalid leave type"
+    
+    max_allowed = max_days[leave_type]
+    
+    if days_requested > max_allowed:
+        if leave_type == 'compassionate':
+            relationship = "immediate family" if compassionate_type in ['child', 'parents', 'husband', 'wife'] else "extended family"
+            return False, f"Compassionate leave for {relationship} is limited to {max_allowed} day(s)"
+        else:
+            return False, f"{leave_type.replace('_', ' ').title()} leave is limited to {max_allowed} days"
+    
+    return True, ""
 
 with app.app_context():
     # Create the instance folder if it doesn't exist
@@ -394,10 +455,39 @@ def leaves():
 def request_leave():
     form = LeaveRequestForm()
     
+    # REMOVE THIS SECTION - let the JavaScript handle the visibility
+    # Show/hide compassionate type field based on leave type
+    # if request.method == 'GET':
+    #     form.compassionate_type.render_kw = {'style': 'display: none;'}
+    
     if form.validate_on_submit():
         # Calculate number of days
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1  # Inclusive of both start and end dates
+        
+        # Validate leave days
+        compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
+        is_valid, error_message = validate_leave_days(
+            form.leave_type.data, days_requested, compassionate_type
+        )
+        
+        if not is_valid:
+            flash(error_message, 'danger')
+            return render_template('request_leave.html', form=form)
+        
+        # Handle file upload
+        attachment_filename = None
+        if form.attachment.data:
+            # Create upload folder if it doesn't exist
+            if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+            # Generate unique filename
+            filename = secure_filename(form.attachment.data.filename)
+            unique_filename = f"{uuid.uuid4().hex}_{filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            form.attachment.data.save(file_path)
+            attachment_filename = unique_filename
         
         # Create leave request
         leave_request = LeaveRequest(
@@ -405,7 +495,9 @@ def request_leave():
             start_date=form.start_date.data,
             end_date=form.end_date.data,
             leave_type=form.leave_type.data,
+            compassionate_type=compassionate_type,
             reason=form.reason.data,
+            attachment_filename=attachment_filename,
             status='pending',
             days_requested=days_requested
         )
@@ -680,6 +772,20 @@ def export_leaves():
     response.headers['Content-type'] = 'text/csv'
     
     return response
+
+@app.route('/download_attachment/<filename>')
+@login_required
+def download_attachment(filename):
+    """Serve uploaded attachment files"""
+    try:
+        return send_from_directory(
+            app.config['UPLOAD_FOLDER'],
+            filename,
+            as_attachment=True
+        )
+    except FileNotFoundError:
+        flash('Attachment not found.', 'danger')
+        return redirect(url_for('leaves'))
 
 @app.route('/recruitment')
 @login_required

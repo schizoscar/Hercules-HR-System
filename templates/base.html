@@ -280,7 +280,7 @@
             <h1>{% block header %}HR Nexus{% endblock %}</h1>
             <div class="user-info">
                 {% if current_user.is_authenticated %}
-                <span>Welcome, {{ current_user.full_name }}</span>
+                <span>{{ current_user.full_name }}</span>
                 {% if current_user.is_admin %}
                 <span style="background: #3c8dbc; color: white; padding: 3px 8px; border-radius: 3px; font-size: 0.8rem;">Admin</span>
                 {% endif %}
