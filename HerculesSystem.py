@@ -756,6 +756,23 @@ HR Department
     
     return render_template('add_employee.html', form=form)
 
+@app.route('/download_attachment/<filename>')
+@login_required
+def download_leave_attachment(filename):  # Changed function name
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to view attachments.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    try:
+        return send_from_directory(
+            app.config['UPLOAD_FOLDER'],
+            filename,
+            as_attachment=True
+        )
+    except FileNotFoundError:
+        flash('Attachment not found.', 'danger')
+        return redirect(url_for('leaves'))
+
 @app.route('/bulk_add_employees', methods=['GET', 'POST'])
 @login_required
 def bulk_add_employees():
@@ -905,29 +922,154 @@ def export_leaves():
     
     return response
 
-@app.route('/download_attachment/<filename>')
+@app.route('/admin_edit_leave/<int:request_id>', methods=['GET', 'POST'])
 @login_required
-def download_attachment(filename):
-    """Serve uploaded attachment files"""
-    try:
-        return send_from_directory(
-            app.config['UPLOAD_FOLDER'],
-            filename,
-            as_attachment=True
-        )
-    except FileNotFoundError:
-        flash('Attachment not found.', 'danger')
-        return redirect(url_for('leaves'))
-
-@app.route('/edit_employee/<int:employee_id>', methods=['GET', 'POST'])
-@login_required
-def edit_employee(employee_id):
+def admin_edit_leave(request_id):
     if current_user.user_type != 'admin':
-        flash('You do not have permission to edit employees.', 'danger')
-        return redirect(url_for('dashboard'))
+        flash('You do not have permission to edit leave requests.', 'danger')
+        return redirect(url_for('leaves'))
     
-    employee = Employee.query.get_or_404(employee_id)
-    form = EditEmployeeForm(obj=employee)
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    form = LeaveRequestForm(obj=leave_request)
+    
+    if form.validate_on_submit():
+        # Calculate number of days
+        delta = form.end_date.data - form.start_date.data
+        days_requested = delta.days + 1
+        
+        # Validate leave days
+        compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
+        is_valid, error_message = validate_leave_days(
+            form.leave_type.data, days_requested, compassionate_type
+        )
+        
+        if not is_valid:
+            flash(error_message, 'danger')
+            return render_template('request_leave.html', form=form, admin_editing=True)
+        
+        # Handle file upload
+        if form.attachment.data:
+            # Delete old attachment if exists
+            if leave_request.attachment_filename:
+                try:
+                    os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
+                except:
+                    pass
+            
+            # Create upload folder if it doesn't exist
+            if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+            # Generate unique filename
+            filename = secure_filename(form.attachment.data.filename)
+            unique_filename = f"{uuid.uuid4().hex}_{filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            form.attachment.data.save(file_path)
+            leave_request.attachment_filename = unique_filename
+        
+        # Update leave request
+        leave_request.start_date = form.start_date.data
+        leave_request.end_date = form.end_date.data
+        leave_request.leave_type = form.leave_type.data
+        leave_request.compassionate_type = compassionate_type
+        leave_request.reason = form.reason.data
+        leave_request.days_requested = days_requested
+        
+        db.session.commit()
+        
+        flash('Leave request updated successfully!', 'success')
+        return redirect(url_for('all_leaves'))
+    
+    return render_template('request_leave.html', form=form, admin_editing=True)
+
+@app.route('/admin_delete_leave/<int:request_id>')
+@login_required
+def admin_delete_leave(request_id):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to delete leave requests.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Delete attachment if exists
+    if leave_request.attachment_filename:
+        try:
+            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
+        except:
+            pass
+    
+    # Store info for flash message
+    employee_name = leave_request.employee.full_name
+    leave_type = leave_request.leave_type
+    
+    db.session.delete(leave_request)
+    db.session.commit()
+    
+    flash(f'Leave request for {employee_name} ({leave_type}) has been deleted successfully!', 'success')
+    return redirect(url_for('all_leaves'))
+
+@app.route('/reject_approved_leave/<int:request_id>')
+@login_required
+def reject_approved_leave(request_id):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to reject approved leaves.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Only allow rejecting approved leaves
+    if leave_request.status != 'approved':
+        flash('Only approved leaves can be rejected.', 'danger')
+        return redirect(url_for('all_leaves'))
+    
+    leave_request.status = 'rejected'
+    leave_request.approved_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    # Send email notification to employee
+    subject = f"Your Approved Leave Request Has Been Rejected"
+    body = f"""
+Dear {leave_request.employee.full_name},
+
+Your previously approved leave request has been rejected by an administrator.
+
+Details:
+- Leave Type: {leave_request.leave_type.title()}
+- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
+- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Days: {leave_request.days_requested}
+- Reason: {leave_request.reason}
+
+Status: Rejected (previously approved)
+
+Please contact HR department for more information.
+
+Thank you,
+HR Department
+"""
+    if send_email(leave_request.employee.email, subject, body):
+        flash('Approved leave request rejected. Email notification sent to employee.', 'info')
+    else:
+        flash('Approved leave request rejected, but failed to send email notification.', 'warning')
+    
+    return redirect(url_for('all_leaves'))
+
+@login_required
+def edit_leave(request_id):
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Check if user owns this request (employees, supervisors, factory workers can edit their own)
+    if leave_request.employee_id != current_user.id and current_user.user_type != 'admin':
+        flash('You can only edit your own leave requests.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Check if request can be edited (only pending requests for non-admins)
+    if leave_request.status != 'pending' and current_user.user_type != 'admin':
+        flash('Only pending leave requests can be edited.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    form = LeaveRequestForm(obj=leave_request)
     
     if form.validate_on_submit():
         # Check if email was changed and if it already exists
@@ -946,9 +1088,104 @@ def edit_employee(employee_id):
         
         db.session.commit()
         flash('Employee details updated successfully!', 'success')
-        return redirect(url_for('manage_employees'))
+        return redirect(url_for('leaves'))
     
-    return render_template('edit_employee.html', form=form, employee=employee)
+    return render_template('request_leave.html', form=form, editing=True)
+
+@app.route('/edit_leave/<int:request_id>', methods=['GET', 'POST'])
+@login_required
+def edit_leave(request_id):
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Check if user owns this request or is admin
+    if leave_request.employee_id != current_user.id and current_user.user_type != 'admin':
+        flash('You can only edit your own leave requests.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Check if request can be edited (only pending requests)
+    if leave_request.status != 'pending':
+        flash('Only pending leave requests can be edited.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    form = LeaveRequestForm(obj=leave_request)
+    
+    if form.validate_on_submit():
+        # Calculate number of days
+        delta = form.end_date.data - form.start_date.data
+        days_requested = delta.days + 1
+        
+        # Validate leave days
+        compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
+        is_valid, error_message = validate_leave_days(
+            form.leave_type.data, days_requested, compassionate_type
+        )
+        
+        if not is_valid:
+            flash(error_message, 'danger')
+            return render_template('request_leave.html', form=form)
+        
+        # Handle file upload
+        if form.attachment.data:
+            # Delete old attachment if exists
+            if leave_request.attachment_filename:
+                try:
+                    os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
+                except:
+                    pass
+            
+            # Create upload folder if it doesn't exist
+            if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+            # Generate unique filename
+            filename = secure_filename(form.attachment.data.filename)
+            unique_filename = f"{uuid.uuid4().hex}_{filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            form.attachment.data.save(file_path)
+            leave_request.attachment_filename = unique_filename
+        
+        # Update leave request
+        leave_request.start_date = form.start_date.data
+        leave_request.end_date = form.end_date.data
+        leave_request.leave_type = form.leave_type.data
+        leave_request.compassionate_type = compassionate_type
+        leave_request.reason = form.reason.data
+        leave_request.days_requested = days_requested
+        
+        db.session.commit()
+        
+        flash('Leave request updated successfully!', 'success')
+        return redirect(url_for('leaves'))
+    
+    return render_template('request_leave.html', form=form, editing=True)
+
+@app.route('/delete_leave/<int:request_id>')
+@login_required
+def delete_leave(request_id):
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Check if user owns this request (employees, supervisors, factory workers can delete their own)
+    if leave_request.employee_id != current_user.id and current_user.user_type != 'admin':
+        flash('You can only delete your own leave requests.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Check if request can be deleted (only pending requests for non-admins)
+    if leave_request.status != 'pending' and current_user.user_type != 'admin':
+        flash('Only pending leave requests can be deleted.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Delete attachment if exists
+    if leave_request.attachment_filename:
+        try:
+            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
+        except:
+            pass
+    
+    db.session.delete(leave_request)
+    db.session.commit()
+    
+    flash('Leave request deleted successfully!', 'success')
+    return redirect(url_for('leaves'))
 
 @app.route('/reset_password/<int:employee_id>', methods=['POST'])
 @login_required

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Request Leave{% endblock %}
+{% block title %}{% if editing %}Edit Leave{% elif admin_editing %}Edit Leave (Admin){% else %}Request Leave{% endif %}{% endblock %}
 
-{% block header %}Request Leave{% endblock %}
+{% block header %}{% if editing %}Edit Leave{% elif admin_editing %}Edit Leave (Admin){% else %}Request Leave{% endif %}{% endblock %}
 
 {% block content %}
 <div style="max-width: 600px; margin: 0 auto;">
-    <h2>Request Leave</h2>
+    <h2>{% if editing %}Edit Leave Request{% elif admin_editing %}Edit Leave Request (Admin){% else %}Request Leave{% endif %}</h2>
     <!-- Add enctype="multipart/form-data" to handle file uploads -->
     <form method="POST" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
@@ -86,8 +86,14 @@
         </div>
         
         <div style="text-align: center;">
-            {{ form.submit(class="btn", style="background: #3c8dbc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;") }}
-            <a href="{{ url_for('leaves') }}" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 4px; text-decoration: none; display: inline-block; margin-left: 10px;">Cancel</a>
+            {% if admin_editing %}
+                <button type="submit" class="btn" style="background: #3c8dbc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;">
+                    Confirm Changes
+                </button>
+            {% else %}
+                {{ form.submit(class="btn", style="background: #3c8dbc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;") }}
+            {% endif %}
+            <a href="{% if admin_editing %}{{ url_for('all_leaves') }}{% else %}{{ url_for('leaves') }}{% endif %}" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 4px; text-decoration: none; display: inline-block; margin-left: 10px;">Cancel</a>
         </div>
     </form>
 </div>
