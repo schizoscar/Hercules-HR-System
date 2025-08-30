@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hercules HR - {% block title %}Home{% endblock %}</title>
+    <title>HR Nexus - {% block title %}Home{% endblock %}</title>
     <style>
         * {
             margin: 0;
@@ -205,29 +205,38 @@
         
         /* Responsive */
         @media (max-width: 768px) {
-            /* Stack buttons vertically in table cells */
-            .pending-requests-table td:nth-child(7) div {
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
+            .main-content {
+                padding-left: 70px; /* Less padding on mobile */
             }
-    
-            /* Make buttons full width on mobile */
-            .pending-requests-table a {
-                display: block;
-                text-align: center;
-                padding: 8px 5px;
+            
+            .main-content.shifted {
+                margin-left: 0;
+                padding-left: 20px;
             }
-    
-            /* Reduce padding in table cells on mobile */
-            .pending-requests-table td {
-                padding: 8px 5px;
+            
+            .sidebar.open {
+                width: 100%;
             }
-    
-            /* Make table headers more compact */
-            .pending-requests-table th {
-                padding: 8px 5px;
-                font-size: 0.9rem;
+            
+            /* Better touch targets for mobile */
+            .sidebar-menu a {
+                padding: 16px 20px;
+            }
+            
+            .hamburger-menu {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .alert {
+                padding: 15px;
+                font-size: 16px;
+            }
+            
+            /* Larger tap targets for buttons */
+            button, .btn, a[role="button"] {
+                min-height: 44px;
+                min-width: 44px;
             }
         }
     </style>
@@ -241,11 +250,18 @@
     <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h2>Hercules HR</h2>
+            <h2>HR Nexus</h2>
         </div>
         <div class="sidebar-menu">
             <ul>
                 <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+                
+                {% if current_user.is_authenticated and current_user.user_type == 'admin' %}
+                <li><a href="{{ url_for('manage_employees') }}" class="{% if request.endpoint == 'manage_employees' %}active{% endif %}">Manage Employees</a></li>
+                <li><a href="{{ url_for('add_employee') }}" class="{% if request.endpoint == 'add_employee' %}active{% endif %}">Add Employee</a></li>
+                <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">Bulk Add Employees</a></li>
+                {% endif %}
+                
                 <li><a href="{{ url_for('employee_directory') }}" class="{% if request.endpoint == 'employee_directory' %}active{% endif %}">Employee Directory</a></li>
                 <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">Departments</a></li>
                 <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">Performance Reviews</a></li>
@@ -261,7 +277,7 @@
     <!-- Main Content -->
     <div class="main-content" id="mainContent">
         <div class="header">
-            <h1>{% block header %}Hercules HR{% endblock %}</h1>
+            <h1>{% block header %}HR Nexus{% endblock %}</h1>
             <div class="user-info">
                 {% if current_user.is_authenticated %}
                 <span>Welcome, {{ current_user.full_name }}</span>

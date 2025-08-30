@@ -33,6 +33,10 @@
     <Content Include="templates\*.html" />
     <Content Include="templates\request_leave.html" />
     <Content Include="templates\all_leaves.html" />
+    <Content Include="templates\factory_dashboard.html" />
+    <Content Include="templates\manage_employees.html" />
+    <Content Include="templates\add_employee.html" />
+    <Content Include="templates\bulk_add_employees.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->
   <ItemGroup>

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Add Employees{% endblock %}
+
+{% block header %}Bulk Add Employees{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 0 auto;">
+    <h2>Bulk Add Employees</h2>
+    
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+        <h3>Format Instructions</h3>
+        <p>Enter one employee per line in the following format:</p>
+        <p><strong>Full Name, Email, Department, Position, User Type</strong></p>
+        <p>Example:</p>
+        <pre style="background: white; padding: 10px; border-radius: 4px;">
+John Doe, john.doe@example.com, IT, Software Developer, office
+Jane Smith, jane.smith@example.com, Production, Assembly Worker, factory
+Mike Johnson, mike.johnson@example.com, Operations, Team Lead, supervisor</pre>
+    </div>
+    
+    <form method="POST">
+        {{ form.hidden_tag() }}
+        
+        <div style="margin-bottom: 15px;">
+            <label for="employee_data" style="display: block; margin-bottom: 5px;">Employee Data</label>
+            {{ form.employee_data(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-height: 200px;", placeholder="Enter employee data in the specified format") }}
+            {% if form.employee_data.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.employee_data.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div style="text-align: center;">
+            {{ form.submit(class="btn", style="background: #3c8dbc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;") }}
+            <a href="{{ url_for('manage_employees') }}" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 4px; text-decoration: none; display: inline-block; margin-left: 10px;">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

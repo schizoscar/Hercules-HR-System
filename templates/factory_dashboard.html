@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Factory Dashboard{% endblock %}
+
+{% block header %}Factory Dashboard{% endblock %}
+
+{% block content %}
+<div style="text-align: center; padding: 50px 0;">
+    <h2>Welcome to HR Nexus</h2>
+    <p>Factory Worker Dashboard</p>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 30px;">
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; border-left: 4px solid #3c8dbc;">
+            <h3>Leaves Management</h3>
+            <p>View your leave balance and request time off</p>
+            <a href="{{ url_for('leaves') }}">Manage Leaves</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
