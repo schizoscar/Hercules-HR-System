@@ -38,8 +38,8 @@ login_manager.login_view = 'login'
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'scarletsumirepoh@gmail.com'  # Your Gmail address
-app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'     # Gmail App Password (not your regular password)
+app.config['MAIL_USERNAME'] = 'scarletsumirepoh@gmail.com'  
+app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'    
 app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
 
 # configuration for leave file uploads
@@ -95,6 +95,39 @@ Thank you,
 HR Department
 """
     return send_email(employee.email, subject, body)
+
+def send_supervisor_notification(leave_request):
+    """Send email notification to supervisors about leave requests from their team"""
+    # This would require adding a supervisor relationship to your Employee model
+    # For now, we'll just send to all supervisors
+    supervisors = Employee.query.filter(Employee.user_type == 'supervisor').all()
+    
+    if not supervisors:
+        return False
+    
+    subject = f"Leave Request from {leave_request.employee.full_name} (Your Team Member)"
+    body = f"""
+A leave request has been submitted by your team member {leave_request.employee.full_name}.
+
+Details:
+- Leave Type: {leave_request.leave_type.title()}
+- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
+- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Days: {leave_request.days_requested}
+- Reason: {leave_request.reason}
+
+Please log in to the HR system to review this request if needed.
+
+Thank you,
+HR System
+"""
+    
+    success = True
+    for supervisor in supervisors:
+        if not send_email(supervisor.email, subject, body):
+            success = False
+    
+    return success
 
 # Database Models
 class Employee(UserMixin, db.Model):
@@ -337,6 +370,42 @@ with app.app_context():
     # Add the is_admin and user_type columns if they don't exist
     add_is_admin_column()
 
+
+def send_leave_request_notification(leave_request):
+    """Send email notification to admins about new leave request"""
+    # Get all admin users
+    admins = Employee.query.filter(Employee.user_type == 'admin').all()
+    
+    if not admins:
+        print("No admin users found to send notification")
+        return False
+    
+    subject = f"New Leave Request from {leave_request.employee.full_name}"
+    body = f"""
+A new leave request has been submitted and requires your review.
+
+Employee: {leave_request.employee.full_name}
+Leave Type: {leave_request.leave_type.title()}
+Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
+End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+Days Requested: {leave_request.days_requested}
+Reason: {leave_request.reason}
+
+Please log in to the HR system to review this request.
+
+Thank you,
+HR System
+"""
+    
+    # Send email to all admins
+    success = True
+    for admin in admins:
+        if not send_email(admin.email, subject, body):
+            success = False
+            print(f"Failed to send notification to admin: {admin.email}")
+    
+    return success
+
 # Routes
 @app.route('/')
 def home():
@@ -350,7 +419,7 @@ def create_test_users():
             username='admin',
             password=generate_password_hash('temp_password'),
             full_name='Admin User',
-            email='admin@example.com',
+            email='scarletsumirepoh@gmail.com',
             department='HR',
             position='System Administrator',
             hire_date=datetime.utcnow(),
@@ -479,11 +548,6 @@ def leaves():
 def request_leave():
     form = LeaveRequestForm()
     
-    # REMOVE THIS SECTION - let the JavaScript handle the visibility
-    # Show/hide compassionate type field based on leave type
-    # if request.method == 'GET':
-    #     form.compassionate_type.render_kw = {'style': 'display: none;'}
-    
     if form.validate_on_submit():
         # Calculate number of days
         delta = form.end_date.data - form.start_date.data
@@ -526,6 +590,9 @@ def request_leave():
             days_requested=days_requested
         )
         
+        db.session.add(leave_request)
+        db.session.commit()
+        
         # Send notification to admins
         if send_leave_request_notification(leave_request):
             flash('Leave request submitted successfully! Admins have been notified.', 'success')
@@ -549,9 +616,27 @@ def approve_leave(request_id):
     
     db.session.commit()
     
-    # Send email notification
-    if send_leave_status_email(leave_request.employee, leave_request, 'approved'):
-        flash('Leave request approved successfully. Email notification sent.', 'success')
+    # Send email notification to employee
+    subject = f"Your Leave Request Has Been Approved"
+    body = f"""
+Dear {leave_request.employee.full_name},
+
+Your leave request has been approved by {current_user.full_name}.
+
+Details:
+- Leave Type: {leave_request.leave_type.title()}
+- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
+- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Days: {leave_request.days_requested}
+- Reason: {leave_request.reason}
+
+Status: Approved
+
+Thank you,
+HR Department
+"""
+    if send_email(leave_request.employee.email, subject, body):
+        flash('Leave request approved successfully. Email notification sent to employee.', 'success')
     else:
         flash('Leave request approved successfully, but failed to send email notification.', 'warning')
     
@@ -570,13 +655,34 @@ def reject_leave(request_id):
     
     db.session.commit()
     
-    # Send email notification
-    if send_leave_status_email(leave_request.employee, leave_request, 'rejected'):
-        flash('Leave request rejected. Email notification sent.', 'info')
+    # Send email notification to employee
+    subject = f"Your Leave Request Has Been Rejected"
+    body = f"""
+Dear {leave_request.employee.full_name},
+
+Your leave request has been rejected by {current_user.full_name}.
+
+Details:
+- Leave Type: {leave_request.leave_type.title()}
+- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
+- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Days: {leave_request.days_requested}
+- Reason: {leave_request.reason}
+
+Status: Rejected
+
+Please contact your supervisor or HR department for more information.
+
+Thank you,
+HR Department
+"""
+    if send_email(leave_request.employee.email, subject, body):
+        flash('Leave request rejected. Email notification sent to employee.', 'info')
     else:
         flash('Leave request rejected, but failed to send email notification.', 'warning')
     
     return redirect(url_for('leaves'))
+
 
 @app.route('/manage_employees')
 @login_required
@@ -925,7 +1031,7 @@ Reason: {leave_request.reason}
 Please review the request in the HR system.
 
 Thank you,
-HR System
+Hercules HR
 """
     
     # Send email to all admins
