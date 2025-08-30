@@ -37,6 +37,7 @@
     <Content Include="templates\manage_employees.html" />
     <Content Include="templates\add_employee.html" />
     <Content Include="templates\bulk_add_employees.html" />
+    <Content Include="templates\edit_employee.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->
   <ItemGroup>

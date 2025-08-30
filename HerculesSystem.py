@@ -34,20 +34,26 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# Email configuration 
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'  # can use other providers
+# Email configuration - Update these values
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'your_email@gmail.com'  # Set this
-app.config['MAIL_PASSWORD'] = 'your_app_password'  # Set this (use App Password for Gmail)
+app.config['MAIL_USERNAME'] = 'scarletsumirepoh@gmail.com'  # Your Gmail address
+app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'     # Gmail App Password (not your regular password)
+app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
 
 # configuration for leave file uploads
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 def send_email(to_email, subject, body):
-    """Send email using SMTP"""
+    """Send email using SMTP with better error handling"""
     try:
+        # Check if email is configured
+        if not app.config['MAIL_USERNAME'] or not app.config['MAIL_PASSWORD']:
+            print("Email not configured properly")
+            return False
+        
         msg = MIMEMultipart()
         msg['From'] = app.config['MAIL_USERNAME']
         msg['To'] = to_email
@@ -56,14 +62,16 @@ def send_email(to_email, subject, body):
         msg.attach(MIMEText(body, 'plain'))
         
         server = smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT'])
+        server.ehlo()
         server.starttls()
         server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
         text = msg.as_string()
         server.sendmail(app.config['MAIL_USERNAME'], to_email, text)
         server.quit()
+        print(f"Email sent successfully to {to_email}")
         return True
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print(f"Error sending email to {to_email}: {str(e)}")
         return False
 
 def send_leave_status_email(employee, leave_request, status):
@@ -183,6 +191,22 @@ class BulkAddEmployeesForm(FlaskForm):
     employee_data = TextAreaField('Employee Data', validators=[DataRequired()], 
         description="Format: Full Name,Email,Department,Position,User Type (one per line)")
     submit = SubmitField('Add Employees')
+
+class EditEmployeeForm(FlaskForm):
+    full_name = StringField('Full Name', validators=[DataRequired()])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    department = StringField('Department', validators=[DataRequired()])
+    position = StringField('Position', validators=[DataRequired()])
+    user_type = SelectField('User Type', choices=[
+        ('office', 'Office Employee'),
+        ('factory', 'Factory Worker'),
+        ('supervisor', 'Supervisor')
+    ], validators=[DataRequired()])
+    submit = SubmitField('Update Employee')
+    
+
+class ResetPasswordForm(FlaskForm):
+    submit = SubmitField('Reset Password')
 
 # Add this right before your route definitions
 with app.app_context():
@@ -502,10 +526,12 @@ def request_leave():
             days_requested=days_requested
         )
         
-        db.session.add(leave_request)
-        db.session.commit()
+        # Send notification to admins
+        if send_leave_request_notification(leave_request):
+            flash('Leave request submitted successfully! Admins have been notified.', 'success')
+        else:
+            flash('Leave request submitted successfully! Failed to send notification to admins.', 'warning')
         
-        flash('Leave request submitted successfully! You will be notified when your supervisor reviews it.', 'success')
         return redirect(url_for('leaves'))
     
     return render_template('request_leave.html', form=form)
@@ -786,6 +812,129 @@ def download_attachment(filename):
     except FileNotFoundError:
         flash('Attachment not found.', 'danger')
         return redirect(url_for('leaves'))
+
+@app.route('/edit_employee/<int:employee_id>', methods=['GET', 'POST'])
+@login_required
+def edit_employee(employee_id):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to edit employees.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    employee = Employee.query.get_or_404(employee_id)
+    form = EditEmployeeForm(obj=employee)
+    
+    if form.validate_on_submit():
+        # Check if email was changed and if it already exists
+        if form.email.data != employee.email:
+            existing_employee = Employee.query.filter_by(email=form.email.data).first()
+            if existing_employee and existing_employee.id != employee.id:
+                flash('Email already exists. Please use a different email.', 'danger')
+                return render_template('edit_employee.html', form=form, employee=employee)
+        
+        # Update employee details
+        employee.full_name = form.full_name.data
+        employee.email = form.email.data
+        employee.department = form.department.data
+        employee.position = form.position.data
+        employee.user_type = form.user_type.data
+        
+        db.session.commit()
+        flash('Employee details updated successfully!', 'success')
+        return redirect(url_for('manage_employees'))
+    
+    return render_template('edit_employee.html', form=form, employee=employee)
+
+@app.route('/reset_password/<int:employee_id>', methods=['POST'])
+@login_required
+def reset_password(employee_id):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to reset passwords.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    employee = Employee.query.get_or_404(employee_id)
+    
+    # Generate a new temporary password
+    characters = string.ascii_letters + string.digits
+    temp_password = ''.join(random.choice(characters) for i in range(10))
+    employee.password = generate_password_hash(temp_password)
+    
+    db.session.commit()
+    
+    # Try to send email
+    subject = "Your Password Has Been Reset"
+    body = f"""
+Dear {employee.full_name},
+
+Your password has been reset by the administrator.
+
+Your new temporary password is: {temp_password}
+
+Please change your password after logging in.
+
+You can access the system at: {request.host_url}
+
+Thank you,
+HR Department
+"""
+    
+    email_sent = send_email(employee.email, subject, body)
+    
+    if email_sent:
+        flash('Password reset successfully. Email notification sent.', 'success')
+    else:
+        # Store the password in session to display to admin
+        flash(f'Password reset successfully. New password: {temp_password}. Failed to send email.', 'warning')
+    
+    return redirect(url_for('manage_employees'))
+
+@app.route('/test_email')
+@login_required
+def test_email():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to test email.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    test_subject = "HR System Email Test"
+    test_body = "This is a test email from your HR system."
+    
+    if send_email(current_user.email, test_subject, test_body):
+        flash('Test email sent successfully!', 'success')
+    else:
+        flash('Failed to send test email. Please check your email configuration.', 'danger')
+    
+    return redirect(url_for('dashboard'))
+
+def send_leave_request_notification(leave_request):
+    """Send email notification to admins about new leave request"""
+    # Get all admin users
+    admins = Employee.query.filter(Employee.user_type == 'admin').all()
+    
+    if not admins:
+        return False
+    
+    subject = f"New Leave Request from {leave_request.employee.full_name}"
+    body = f"""
+A new leave request has been submitted.
+
+Employee: {leave_request.employee.full_name}
+Leave Type: {leave_request.leave_type.title()}
+Dates: {leave_request.start_date.strftime('%Y-%m-%d')} to {leave_request.end_date.strftime('%Y-%m-%d')}
+Days: {leave_request.days_requested}
+Reason: {leave_request.reason}
+
+Please review the request in the HR system.
+
+Thank you,
+HR System
+"""
+    
+    # Send email to all admins
+    success = True
+    for admin in admins:
+        if not send_email(admin.email, subject, body):
+            success = False
+    
+    return success
 
 @app.route('/recruitment')
 @login_required
