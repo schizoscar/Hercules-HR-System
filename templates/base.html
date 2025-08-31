@@ -24,6 +24,7 @@
             --border-radius: 12px;
             --border-radius-lg: 16px;
             --border-radius-xl: 20px;
+            --sidebar-radius: 20px;
         }
 
         * {
@@ -114,7 +115,7 @@
             top: 0;
         }
         
-        /* Sidebar - Modern version */
+        /* Sidebar - Modern version with rounded corners */
         .sidebar {
             position: fixed;
             left: 0;
@@ -128,6 +129,7 @@
             z-index: 998;
             overflow-y: auto;
             box-shadow: var(--shadow-lg);
+            border-radius: 0 var(--sidebar-radius) var(--sidebar-radius) 0;
         }
         
         .sidebar.open {
@@ -139,6 +141,7 @@
             background: rgba(0, 0, 0, 0.1);
             text-align: center;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 var(--sidebar-radius) 0 0;
         }
         
         .sidebar-header h2 {
@@ -170,6 +173,7 @@
             transition: all 0.3s ease;
             font-weight: 500;
             border-left: 4px solid transparent;
+            border-radius: 0 var(--border-radius) var(--border-radius) 0;
         }
         
         .sidebar-menu a:hover,
@@ -331,6 +335,41 @@
             background: var(--gradient-accent);
             color: white;
         }
+
+        /* Dashboard card styles */
+        .dashboard-card {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            display: block;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            text-decoration: none;
+            color: inherit;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .dashboard-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .dashboard-card:hover::before {
+            left: 100%;
+        }
         
         /* Responsive */
         @media (max-width: 768px) {
@@ -346,6 +385,7 @@
             
             .sidebar.open {
                 width: 100%;
+                border-radius: 0;
             }
             
             .sidebar-menu a {
@@ -371,6 +411,10 @@
             .user-info {
                 flex-wrap: wrap;
             }
+
+            .dashboard-card {
+                padding: 20px;
+            }
         }
 
         /* Animation for page transitions */
@@ -381,6 +425,22 @@
         
         .content {
             animation: fadeIn 0.4s ease-out;
+        }
+
+        /* Animation for dashboard cards */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .dashboard-card {
+            animation: fadeInUp 0.6s ease-out;
         }
     </style>
 </head>

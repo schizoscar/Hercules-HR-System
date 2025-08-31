@@ -328,7 +328,7 @@ class LeaveRequestForm(FlaskForm):
         FileAllowed(['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'], 
                    'Only images (JPG, PNG), PDF and Word documents are allowed')
     ])
-    submit = SubmitField('Submit Request')
+    submit = SubmitField('Confirm')
 
 werkzeug.serving.WSGIRequestHandler.handle = handle_corrupted_headers
 
