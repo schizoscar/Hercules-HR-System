@@ -63,8 +63,10 @@
                         {% endif %}
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Action</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Timestamp</th>
+                        {% if current_user.user_type == 'admin' %}
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Status</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Location</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">IP Address</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -89,6 +91,7 @@
                             </span>
                         </td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        {% if current_user.user_type == 'admin' %}
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <span style="
                                 padding: 4px 8px;
@@ -102,7 +105,8 @@
                                 {{ record.status.replace('_', ' ').title() if record.status else 'N/A' }}
                             </span>
                         </td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.address or 'N/A' }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.ip_address or 'N/A' }}</td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
