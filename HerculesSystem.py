@@ -1,6 +1,7 @@
 import requests
 from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, and_, or_
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
@@ -8,7 +9,7 @@ from wtforms import StringField, PasswordField, SubmitField, DateField, TextArea
 from wtforms.validators import DataRequired, Length, Email
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import os
 import sqlite3
 import socket
@@ -1388,10 +1389,202 @@ def test_email():
 def recruitment():
     return render_template('recruitment.html')
 
+# Add this route for the attendance report
 @app.route('/reports')
 @login_required
 def reports():
-    return render_template('reports.html')
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to view reports.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get all employees for the filter dropdown
+    employees = Employee.query.all()
+    
+    # Get filter parameters
+    employee_id = request.args.get('employee_id')
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    status_filter = request.args.get('status')
+    
+    # Convert date strings to date objects
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
+    
+    # Default to current month if no dates provided
+    if not start_date and not end_date:
+        today = date.today()
+        start_date = today.replace(day=1)
+        end_date = today
+    
+    # Build query to get attendance data
+    attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter)
+    
+    return render_template('reports.html', 
+                         employees=employees,
+                         attendance_records=attendance_data,
+                         now=datetime.now())
+
+def get_attendance_data(employee_id=None, start_date=None, end_date=None, status_filter=None):
+    """Generate attendance data for all employees based on filters"""
+    
+    # If no dates provided, use current month
+    if not start_date:
+        start_date = date.today().replace(day=1)
+    if not end_date:
+        end_date = date.today()
+    
+    # Get all employees or filtered employee
+    if employee_id:
+        employees = [Employee.query.get(employee_id)]
+    else:
+        employees = Employee.query.all()
+    
+    attendance_records = []
+    
+    # Get all time tracking records for the date range in one query
+    time_records_query = TimeTracking.query.filter(
+        TimeTracking.timestamp >= datetime.combine(start_date, datetime.min.time()),
+        TimeTracking.timestamp <= datetime.combine(end_date, datetime.max.time())
+    )
+    
+    if employee_id:
+        time_records_query = time_records_query.filter(TimeTracking.employee_id == employee_id)
+    
+    time_records = time_records_query.all()
+    
+    # Organize records by employee and date
+    records_by_employee_date = {}
+    
+    for record in time_records:
+        record_date = record.timestamp.date()
+        employee_id = record.employee_id
+        
+        if employee_id not in records_by_employee_date:
+            records_by_employee_date[employee_id] = {}
+        
+        if record_date not in records_by_employee_date[employee_id]:
+            records_by_employee_date[employee_id][record_date] = {
+                'clock_in': None,
+                'clock_out': None
+            }
+        
+        if record.action_type == 'clock_in':
+            # Only keep the earliest clock-in for each day
+            if (records_by_employee_date[employee_id][record_date]['clock_in'] is None or 
+                record.timestamp < records_by_employee_date[employee_id][record_date]['clock_in']):
+                records_by_employee_date[employee_id][record_date]['clock_in'] = record.timestamp
+        elif record.action_type == 'clock_out':
+            # Only keep the latest clock-out for each day
+            if (records_by_employee_date[employee_id][record_date]['clock_out'] is None or 
+                record.timestamp > records_by_employee_date[employee_id][record_date]['clock_out']):
+                records_by_employee_date[employee_id][record_date]['clock_out'] = record.timestamp
+    
+    # Generate attendance records - ONE record per employee per date
+    for employee in employees:
+        # Generate date range
+        current_date = start_date
+        while current_date <= end_date:
+            # Check if employee has records for this date
+            clock_in = None
+            clock_out = None
+            status = 'absent'
+            total_hours = 'N/A'
+            
+            if employee.id in records_by_employee_date and current_date in records_by_employee_date[employee.id]:
+                clock_data = records_by_employee_date[employee.id][current_date]
+                clock_in = clock_data['clock_in']
+                clock_out = clock_data['clock_out']
+                
+                if clock_in:
+                    status = 'present'
+                    
+                    # Calculate total hours if both clock in and out exist
+                    if clock_in and clock_out:
+                        time_diff = clock_out - clock_in
+                        total_hours = round(time_diff.total_seconds() / 3600, 2)
+            
+            # Apply status filter
+            if status_filter and status != status_filter:
+                current_date += timedelta(days=1)
+                continue
+            
+            attendance_records.append({
+                'employee': employee,
+                'date': current_date,
+                'status': status,
+                'clock_in': clock_in,
+                'clock_out': clock_out,
+                'total_hours': total_hours
+            })
+            
+            current_date += timedelta(days=1)
+    
+    return attendance_records
+
+# Add this route for exporting attendance data
+@app.route('/export_attendance')
+@login_required
+def export_attendance():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to export attendance data.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get filter parameters
+    employee_id = request.args.get('employee_id')
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    status_filter = request.args.get('status')
+    
+    # Convert date strings to date objects
+    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
+    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
+    
+    # Get attendance data
+    attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter)
+    
+    # Create CSV
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(['Employee Name', 'Date', 'Status', 'Clock In', 'Clock Out', 'Total Hours'])
+    
+    # Write data
+    for record in attendance_data:
+        writer.writerow([
+            record['employee'].full_name,
+            record['date'].strftime('%Y-%m-%d'),
+            record['status'].title(),
+            record['clock_in'].strftime('%H:%M') if record['clock_in'] else 'N/A',
+            record['clock_out'].strftime('%H:%M') if record['clock_out'] else 'N/A',
+            record['total_hours']
+        ])
+    
+    # Create filename with filter info
+    filename_parts = ['attendance_report']
+    
+    if employee_id:
+        employee = Employee.query.get(employee_id)
+        filename_parts.append(f'employee_{employee.full_name.replace(" ", "_")}')
+    
+    if start_date_str:
+        filename_parts.append(f'from_{start_date_str}')
+    
+    if end_date_str:
+        filename_parts.append(f'to_{end_date_str}')
+    
+    if status_filter:
+        filename_parts.append(f'status_{status_filter}')
+    
+    filename = '_'.join(filename_parts) + '.csv'
+    
+    # Create response
+    output.seek(0)
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-type'] = 'text/csv'
+    
+    return response
 
 @app.route('/time_reports')
 @login_required
