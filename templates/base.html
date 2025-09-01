@@ -517,27 +517,49 @@
             {% block content %}{% endblock %}
         </div>
     </div>
-
     <script>
-        // Toggle sidebar
-        document.getElementById('hamburgerMenu').addEventListener('click', function () {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('mainContent').classList.toggle('shifted');
-            this.classList.toggle('open');
-        });
-
-        // Close sidebar when clicking outside
-        document.addEventListener('click', function (event) {
+        // Ensure DOM is fully loaded before attaching sidebar event listeners
+        document.addEventListener('DOMContentLoaded', function () {
+            const hamburgerMenu = document.getElementById('hamburgerMenu');
             const sidebar = document.getElementById('sidebar');
-            const hamburger = document.getElementById('hamburgerMenu');
-            const isClickInsideSidebar = sidebar.contains(event.target);
-            const isClickHamburger = hamburger.contains(event.target);
+            const mainContent = document.getElementById('mainContent');
 
-            if (!isClickInsideSidebar && !isClickHamburger && sidebar.classList.contains('open')) {
-                sidebar.classList.remove('open');
-                document.getElementById('mainContent').classList.remove('shifted');
-                hamburger.classList.remove('open');
+            console.log('Sidebar script initialized. Elements found:', {
+                hamburgerMenu: !!hamburgerMenu,
+                sidebar: !!sidebar,
+                mainContent: !!mainContent
+            });
+
+            if (!hamburgerMenu || !sidebar || !mainContent) {
+                console.error('Sidebar elements missing:', {
+                    hamburgerMenu: !!hamburgerMenu,
+                    sidebar: !!sidebar,
+                    mainContent: !!mainContent
+                });
+                return;
             }
+
+            // Toggle sidebar
+            hamburgerMenu.addEventListener('click', function (e) {
+                e.stopPropagation(); // Prevent click from bubbling to document
+                console.log('Hamburger menu clicked');
+                sidebar.classList.toggle('open');
+                mainContent.classList.toggle('shifted');
+                this.classList.toggle('open');
+            });
+
+            // Close sidebar when clicking outside
+            document.addEventListener('click', function (event) {
+                const isClickInsideSidebar = sidebar.contains(event.target);
+                const isClickHamburger = hamburgerMenu.contains(event.target);
+
+                if (!isClickInsideSidebar && !isClickHamburger && sidebar.classList.contains('open')) {
+                    console.log('Closing sidebar due to outside click');
+                    sidebar.classList.remove('open');
+                    mainContent.classList.remove('shifted');
+                    hamburgerMenu.classList.remove('open');
+                }
+            });
         });
     </script>
 </body>

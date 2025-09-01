@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
-from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, FileField, HiddenField
+from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, HiddenField
 from wtforms.validators import DataRequired, Length, Email
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -22,10 +22,10 @@ import random
 import string
 import uuid
 import logging
+import ipaddress
 
 # handler for the bad requests
 import werkzeug.serving
-
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -36,6 +36,11 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['Permissions-Policy'] = 'geolocation=()'
+    return response
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -45,27 +50,24 @@ logging.basicConfig(
     ]
 )
 
-# Email configuration - Update these values
+# Email configuration
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'scarletsumirepoh@gmail.com'  
-app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'    
+app.config['MAIL_USERNAME'] = 'scarletsumirepoh@gmail.com'
+app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'
 app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
 
-# configuration for leave file uploads
+# Configuration for leave file uploads
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Office coordinates (set your office coordinates here)
-app.config['OFFICE_LATITUDE'] = 3.1390  # Example: Kuala Lumpur coordinates
-app.config['OFFICE_LONGITUDE'] = 101.6869
-app.config['OFFICE_RADIUS_METERS'] = 100  # 100 meter radius
+# Office IP network (adjust to your office's IP range)
+app.config['OFFICE_NETWORK'] = '192.168.0.0/16'
 
 def send_email(to_email, subject, body):
     """Send email using SMTP with better error handling"""
     try:
-        # Check if email is configured
         if not app.config['MAIL_USERNAME'] or not app.config['MAIL_PASSWORD']:
             print("Email not configured properly")
             return False
@@ -114,8 +116,6 @@ HR Department
 
 def send_supervisor_notification(leave_request):
     """Send email notification to supervisors about leave requests from their team"""
-    # This would require adding a supervisor relationship to your Employee model
-    # For now, we'll just send to all supervisors
     supervisors = Employee.query.filter(Employee.user_type == 'supervisor').all()
     
     if not supervisors:
@@ -157,9 +157,8 @@ class Employee(UserMixin, db.Model):
     hire_date = db.Column(db.Date)
     is_admin = db.Column(db.Boolean, default=False)
     user_type = db.Column(db.String(20), default='employee')  # admin, supervisor, office, factory
-    # Time tracking fields
     last_clock_in = db.Column(db.DateTime)
-    last_clock_out = db.Column(db.DateTime)  # Fixed typo: ast_clock_out -> last_clock_out
+    last_clock_out = db.Column(db.DateTime)
     last_lunch_start = db.Column(db.DateTime)
     last_lunch_end = db.Column(db.DateTime)
     
@@ -173,12 +172,9 @@ class TimeTracking(db.Model):
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
     action_type = db.Column(db.String(20), nullable=False)  # clock_in, clock_out, lunch_start, lunch_end
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    latitude = db.Column(db.Float)
-    longitude = db.Column(db.Float)
-    address = db.Column(db.String(200))
     status = db.Column(db.String(20))  # in_office, out_of_office
+    ip_address = db.Column(db.String(45))
     
-    # Relationship
     employee = db.relationship('Employee', backref=db.backref('time_tracking', lazy=True))
 
 # Forms
@@ -187,113 +183,8 @@ class LoginForm(FlaskForm):
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
 
-@login_manager.user_loader
-def load_user(user_id):
-    return db.session.get(Employee, int(user_id))
-
-
-@app.context_processor
-def inject_now():
-    return {'now': datetime.utcnow()}
-
-def add_is_admin_column():
-    """Add the is_admin and user_type columns to the employee table if they don't exist"""
-    try:
-        # Connect to the SQLite database
-        conn = sqlite3.connect(os.path.join(app.instance_path, 'hr.db'))
-        cursor = conn.cursor()
-        
-        # Check if the is_admin column exists
-        cursor.execute("PRAGMA table_info(employee)")
-        columns = [column[1] for column in cursor.fetchall()]
-        
-        if 'is_admin' not in columns:
-            # Add the is_admin column
-            cursor.execute("ALTER TABLE employee ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
-            print("Added is_admin column to employee table")
-        
-        if 'user_type' not in columns:
-            # Add the user_type column
-            cursor.execute("ALTER TABLE employee ADD COLUMN user_type VARCHAR(20) DEFAULT 'employee'")
-            print("Added user_type column to employee table")
-        
-        # Check if LeaveRequest table has the new columns
-        cursor.execute("PRAGMA table_info(leave_request)")
-        leave_columns = [column[1] for column in cursor.fetchall()]
-        
-        if 'days_requested' not in leave_columns:
-            cursor.execute("ALTER TABLE leave_request ADD COLUMN days_requested INTEGER DEFAULT 0")
-            print("Added days_requested column to leave_request table")
-        
-        if 'approved_at' not in leave_columns:
-            cursor.execute("ALTER TABLE leave_request ADD COLUMN approved_at DATETIME")
-            print("Added approved_at column to leave_request table")
-        
-        if 'compassionate_type' not in leave_columns:
-            cursor.execute("ALTER TABLE leave_request ADD COLUMN compassionate_type VARCHAR(50)")
-            print("Added compassionate_type column to leave_request table")
-        
-        if 'attachment_filename' not in leave_columns:
-            cursor.execute("ALTER TABLE leave_request ADD COLUMN attachment_filename VARCHAR(255)")
-            print("Added attachment_filename column to leave_request table")
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error checking/adding columns: {e}")
-
-def add_time_tracking_columns():
-    """Add time tracking columns to the employee table if they don't exist"""
-    try:
-        # Connect to the SQLite database
-        conn = sqlite3.connect(os.path.join(app.instance_path, 'hr.db'))
-        cursor = conn.cursor()
-        
-        # Check if the time tracking columns exist
-        cursor.execute("PRAGMA table_info(employee)")
-        columns = [column[1] for column in cursor.fetchall()]
-        
-        time_tracking_columns = [
-            'last_clock_in',
-            'last_clock_out', 
-            'last_lunch_start',
-            'last_lunch_end'
-        ]
-        
-        for column in time_tracking_columns:
-            if column not in columns:
-                cursor.execute(f"ALTER TABLE employee ADD COLUMN {column} DATETIME")
-                print(f"Added {column} column to employee table")
-        
-        # Check if TimeTracking table exists, if not create it
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='time_tracking'")
-        if not cursor.fetchone():
-            # Create TimeTracking table
-            cursor.execute("""
-                CREATE TABLE time_tracking (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    employee_id INTEGER NOT NULL,
-                    action_type VARCHAR(20) NOT NULL,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    latitude FLOAT,
-                    longitude FLOAT,
-                    address VARCHAR(200),
-                    status VARCHAR(20),
-                    FOREIGN KEY (employee_id) REFERENCES employee (id)
-                )
-            """)
-            print("Created time_tracking table")
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error checking/adding time tracking columns: {e}")
-
 class TimeTrackingForm(FlaskForm):
-    action_type = HiddenField('Action Type', validators=[DataRequired()])
-    latitude = HiddenField('Latitude')
-    longitude = HiddenField('Longitude')
-    address = HiddenField('Address')
+    action_type = StringField('Action Type', validators=[DataRequired()])
     submit = SubmitField('Perform Action')
 
 class AddEmployeeForm(FlaskForm):
@@ -324,55 +215,9 @@ class EditEmployeeForm(FlaskForm):
         ('supervisor', 'Supervisor')
     ], validators=[DataRequired()])
     submit = SubmitField('Update Employee')
-    
 
 class ResetPasswordForm(FlaskForm):
     submit = SubmitField('Reset Password')
-
-# Add this right before your route definitions
-with app.app_context():
-    # Create the instance folder if it doesn't exist
-    if not os.path.exists(app.instance_path):
-        os.makedirs(app.instance_path)
-    
-    # Create all tables
-    db.create_all()
-    print("Database tables created!")
-    
-    # Add the is_admin column if it doesn't exist
-    add_is_admin_column()
-    # Add time tracking columns if they don't exist
-    add_time_tracking_columns()
-
-@app.before_request
-def before_request():
-    # Force HTTP for all requests to prevent HTTPS issues
-    if request.url.startswith('https://'):
-        new_url = request.url.replace('https://', 'http://', 1)
-        return redirect(new_url, code=301)
-
-original_handle = werkzeug.serving.WSGIRequestHandler.handle
-
-def handle_corrupted_headers(self):
-    try:
-        return original_handle(self)
-    except (UnicodeDecodeError, ValueError, HTTPException) as e:
-        if "Bad request version" in str(e) or "Bad HTTP/0.9 request type" in str(e):
-            # This is likely an HTTPS request to an HTTP server
-            print(f"Intercepted malformed HTTPS request, redirecting to HTTP...")
-            # Try to redirect to HTTP
-            try:
-                host = self.headers.get('Host', 'localhost:5000')
-                path = self.path
-                self.send_response(301)
-                self.send_header('Location', f'http://{host}{path}')
-                self.end_headers()
-                return
-            except Exception as redirect_error:
-                print(f"Redirect failed: {redirect_error}")
-            return
-        # Re-raise other exceptions
-        raise
 
 class LeaveRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -380,17 +225,15 @@ class LeaveRequest(db.Model):
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
     leave_type = db.Column(db.String(50), nullable=False)
-    compassionate_type = db.Column(db.String(50))  # For compassionate leave sub-type
+    compassionate_type = db.Column(db.String(50))
     reason = db.Column(db.Text)
-    attachment_filename = db.Column(db.String(255))  # Store filename
+    attachment_filename = db.Column(db.String(255))
     status = db.Column(db.String(20), default='pending')
     days_requested = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     approved_at = db.Column(db.DateTime)
     
-    # Relationship
     employee = db.relationship('Employee', backref=db.backref('leave_requests', lazy=True))
-
 
 class LeaveRequestForm(FlaskForm):
     start_date = DateField('Start Date', format='%Y-%m-%d', validators=[DataRequired()])
@@ -420,18 +263,144 @@ class LeaveRequestForm(FlaskForm):
     ])
     submit = SubmitField('Confirm')
 
+# Database Migration Functions
+def add_is_admin_column():
+    """Add the is_admin and user_type columns to the employee table if they don't exist"""
+    try:
+        conn = sqlite3.connect(os.path.join(app.instance_path, 'hr.db'))
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(employee)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'is_admin' not in columns:
+            cursor.execute("ALTER TABLE employee ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
+            print("Added is_admin column to employee table")
+        
+        if 'user_type' not in columns:
+            cursor.execute("ALTER TABLE employee ADD COLUMN user_type VARCHAR(20) DEFAULT 'employee'")
+            print("Added user_type column to employee table")
+        
+        cursor.execute("PRAGMA table_info(leave_request)")
+        leave_columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'days_requested' not in leave_columns:
+            cursor.execute("ALTER TABLE leave_request ADD COLUMN days_requested INTEGER DEFAULT 0")
+            print("Added days_requested column to leave_request table")
+        
+        if 'approved_at' not in leave_columns:
+            cursor.execute("ALTER TABLE leave_request ADD COLUMN approved_at DATETIME")
+            print("Added approved_at column to leave_request table")
+        
+        if 'compassionate_type' not in leave_columns:
+            cursor.execute("ALTER TABLE leave_request ADD COLUMN compassionate_type VARCHAR(50)")
+            print("Added compassionate_type column to leave_request table")
+        
+        if 'attachment_filename' not in leave_columns:
+            cursor.execute("ALTER TABLE leave_request ADD COLUMN attachment_filename VARCHAR(255)")
+            print("Added attachment_filename column to leave_request table")
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error checking/adding columns: {e}")
+
+def add_time_tracking_columns():
+    """Add time tracking columns to the employee table if they don't exist"""
+    try:
+        conn = sqlite3.connect(os.path.join(app.instance_path, 'hr.db'))
+        cursor = conn.cursor()
+        
+        cursor.execute("PRAGMA table_info(employee)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        time_tracking_columns = [
+            'last_clock_in',
+            'last_clock_out',
+            'last_lunch_start',
+            'last_lunch_end'
+        ]
+        
+        for column in time_tracking_columns:
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE employee ADD COLUMN {column} DATETIME")
+                print(f"Added {column} column to employee table")
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='time_tracking'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                CREATE TABLE time_tracking (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER NOT NULL,
+                    action_type VARCHAR(20) NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR(20),
+                    ip_address VARCHAR(45),
+                    FOREIGN KEY (employee_id) REFERENCES employee (id)
+                )
+            """)
+            print("Created time_tracking table")
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error checking/adding time tracking columns: {e}")
+
+# Routes and Logic
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(Employee, int(user_id))
+
+@app.context_processor
+def inject_now():
+    return {'now': datetime.utcnow()}
+
+with app.app_context():
+    if not os.path.exists(app.instance_path):
+        os.makedirs(app.instance_path)
+    db.create_all()
+    print("Database tables created!")
+    add_is_admin_column()
+    add_time_tracking_columns()
+
+@app.before_request
+def before_request():
+    if request.url.startswith('https://'):
+        new_url = request.url.replace('https://', 'http://', 1)
+        return redirect(new_url, code=301)
+
+original_handle = werkzeug.serving.WSGIRequestHandler.handle
+
+def handle_corrupted_headers(self):
+    try:
+        return original_handle(self)
+    except (UnicodeDecodeError, ValueError, HTTPException) as e:
+        if "Bad request version" in str(e) or "Bad HTTP/0.9 request type" in str(e):
+            print(f"Intercepted malformed HTTPS request, redirecting to HTTP...")
+            try:
+                host = self.headers.get('Host', 'localhost:5000')
+                path = self.path
+                self.send_response(301)
+                self.send_header('Location', f'http://{host}{path}')
+                self.end_headers()
+                return
+            except Exception as redirect_error:
+                print(f"Redirect failed: {redirect_error}")
+            return
+        raise
+
 werkzeug.serving.WSGIRequestHandler.handle = handle_corrupted_headers
 
 def validate_leave_days(leave_type, days_requested, compassionate_type=None):
     """Validate leave days based on leave type"""
     max_days = {
-        'annual': 365,  # No specific limit for annual leave
-        'medical': 60,  # Typically 60 days per year for medical
+        'annual': 365,
+        'medical': 60,
         'maternity': 90,
         'compassionate': 3 if compassionate_type in ['child', 'parents', 'husband', 'wife'] else 1,
         'marriage': 3,
         'hospitalised': 60,
-        'socso_mc': 365  # No limit
+        'socso_mc': 365
     }
     
     if leave_type not in max_days:
@@ -448,51 +417,33 @@ def validate_leave_days(leave_type, days_requested, compassionate_type=None):
     
     return True, ""
 
-with app.app_context():
-    # Create the instance folder if it doesn't exist
-    if not os.path.exists(app.instance_path):
-        os.makedirs(app.instance_path)
-    
-    # Create all tables
-    db.create_all()
-    print("Database tables created!")
-    
-    # Add the is_admin and user_type columns if they don't exist
-    add_is_admin_column()
-
-
 def send_leave_request_notification(leave_request):
     """Send email notification to admins about new leave request"""
-    # Get all admin users
     admins = Employee.query.filter(Employee.user_type == 'admin').all()
     
     if not admins:
-        print("No admin users found to send notification")
         return False
     
     subject = f"New Leave Request from {leave_request.employee.full_name}"
     body = f"""
-A new leave request has been submitted and requires your review.
+A new leave request has been submitted.
 
 Employee: {leave_request.employee.full_name}
 Leave Type: {leave_request.leave_type.title()}
-Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
-End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
-Days Requested: {leave_request.days_requested}
+Dates: {leave_request.start_date.strftime('%Y-%m-%d')} to {leave_request.end_date.strftime('%Y-%m-%d')}
+Days: {leave_request.days_requested}
 Reason: {leave_request.reason}
 
-Please log in to the HR system to review this request.
+Please review the request in the HR system.
 
 Thank you,
-HR System
+Hercules HR
 """
     
-    # Send email to all admins
     success = True
     for admin in admins:
         if not send_email(admin.email, subject, body):
             success = False
-            print(f"Failed to send notification to admin: {admin.email}")
     
     return success
 
@@ -501,9 +452,8 @@ HR System
 def home():
     return render_template('home.html')
 
-@app.route('/create_test_users')  # temporary
+@app.route('/create_test_users')
 def create_test_users():
-    # Check if admin user already exists
     if not Employee.query.filter_by(username='admin').first():
         admin_user = Employee(
             username='admin',
@@ -520,7 +470,6 @@ def create_test_users():
         db.session.commit()
         print("Admin user created")
     
-    # Check if Samuel Chong already exists (office employee)
     if not Employee.query.filter_by(username='samchong').first():
         samuel_user = Employee(
             username='samchong',
@@ -537,7 +486,6 @@ def create_test_users():
         db.session.commit()
         print("Samuel Chong user created")
     
-    # Create a factory employee
     if not Employee.query.filter_by(username='factory1').first():
         factory_user = Employee(
             username='factory1',
@@ -554,7 +502,6 @@ def create_test_users():
         db.session.commit()
         print("Factory user created")
     
-    # Create a supervisor
     if not Employee.query.filter_by(username='supervisor1').first():
         supervisor_user = Employee(
             username='supervisor1',
@@ -595,13 +542,9 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    form = TimeTrackingForm()  # Create the form instance
-    
-    # Factory workers only see leaves management
+    form = TimeTrackingForm()
     if current_user.user_type == 'factory':
         return render_template('factory_dashboard.html', form=form)
-    
-    # Regular dashboard for other users
     return render_template('dashboard.html', form=form)
 
 @app.route('/log_error', methods=['POST'])
@@ -617,58 +560,62 @@ def time_tracking():
     
     logging.debug(f"Time tracking attempt by {current_user.username}: {request.form}")
     
-    if form.validate_on_submit():
-        action_type = form.action_type.data
-        latitude = form.latitude.data
-        longitude = form.longitude.data
-        address = form.address.data
-        
-        # Log the action details
-        logging.info(f"Processing {action_type} for {current_user.username}, Lat: {latitude or 'N/A'}, Lon: {longitude or 'N/A'}, Address: {address or 'N/A'}")
-        
-        # Check if user can perform this action
-        can_perform, error_message = can_perform_time_action(current_user, action_type)
-        if not can_perform:
-            logging.warning(f"Action {action_type} blocked for {current_user.username}: {error_message}")
-            flash(error_message, 'danger')
-            return redirect(url_for('dashboard'))
-        
-        # Convert latitude/longitude to float if provided, else None
-        latitude = float(latitude) if latitude else None
-        longitude = float(longitude) if longitude else None
-        
-        # Determine if in office based on coordinates
-        in_office = is_in_office(latitude, longitude) if latitude and longitude else False
-        status = 'in_office' if in_office else 'out_of_office'
-        
-        # Create time tracking record
-        time_record = TimeTracking(
-            employee_id=current_user.id,
-            action_type=action_type,
-            latitude=latitude,
-            longitude=longitude,
-            address=address,
-            status=status
-        )
-        
-        # Update employee's last action timestamps
-        if action_type == 'clock_in':
-            current_user.last_clock_in = datetime.utcnow()
-        elif action_type == 'clock_out':
-            current_user.last_clock_out = datetime.utcnow()
-        elif action_type == 'lunch_start':
-            current_user.last_lunch_start = datetime.utcnow()
-        elif action_type == 'lunch_end':
-            current_user.last_lunch_end = datetime.utcnow()
-        
-        db.session.add(time_record)
-        db.session.commit()
-        
-        logging.info(f"Successfully recorded {action_type} for {current_user.username}, Status: {status}")
-        flash(f'Successfully recorded {action_type.replace("_", " ")}!', 'success')
-    else:
+    # Handle multiple action_type values by taking the last non-empty one
+    action_type_values = request.form.getlist('action_type')
+    valid_action_type = next((val for val in action_type_values if val), None)
+    
+    if not valid_action_type:
+        logging.error(f"No valid action_type received for {current_user.username}: {action_type_values}")
+        flash('Invalid action type. Please try again.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Manually populate form data to bypass validation issue
+    form.action_type.data = valid_action_type
+    
+    if not form.validate_on_submit():
         logging.error(f"Form validation failed for {current_user.username}: {form.errors}")
         flash('Invalid form data. Please try again.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    action_type = form.action_type.data
+    ip = request.remote_addr
+    
+    logging.info(f"Processing {action_type} for {current_user.username}, IP: {ip}")
+    
+    can_perform, error_message = can_perform_time_action(current_user, action_type)
+    if not can_perform:
+        logging.warning(f"Action {action_type} blocked for {current_user.username}: {error_message}")
+        flash(error_message, 'danger')
+        return redirect(url_for('dashboard'))
+    
+    in_office = is_in_office_ip(ip)
+    status = 'in_office' if in_office else 'out_of_office'
+    
+    time_record = TimeTracking(
+        employee_id=current_user.id,
+        action_type=action_type,
+        status=status,
+        ip_address=ip
+    )
+    
+    if action_type == 'clock_in':
+        current_user.last_clock_in = datetime.utcnow()
+    elif action_type == 'clock_out':
+        current_user.last_clock_out = datetime.utcnow()
+    elif action_type == 'lunch_start':
+        current_user.last_lunch_start = datetime.utcnow()
+    elif action_type == 'lunch_end':
+        current_user.last_lunch_end = datetime.utcnow()
+    
+    try:
+        db.session.add(time_record)
+        db.session.commit()
+        logging.info(f"Successfully recorded {action_type} for {current_user.username}, Status: {status}")
+        flash(f'Successfully recorded {action_type.replace("_", " ")}!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Database error for {current_user.username} on {action_type}: {str(e)}")
+        flash('An error occurred while recording your action. Please try again.', 'danger')
     
     return redirect(url_for('dashboard'))
 
@@ -678,13 +625,11 @@ def can_perform_time_action(employee, action_type):
     today = now.date()
     
     if action_type == 'clock_in':
-        # Check if already clocked in today
         if employee.last_clock_in and employee.last_clock_in.date() == today:
             return False, 'You have already clocked in today.'
         return True, ''
     
     elif action_type == 'clock_out':
-        # Must be clocked in first and not already clocked out
         if not employee.last_clock_in or employee.last_clock_in.date() != today:
             return False, 'You must clock in first.'
         if employee.last_clock_out and employee.last_clock_out.date() == today:
@@ -692,7 +637,6 @@ def can_perform_time_action(employee, action_type):
         return True, ''
     
     elif action_type == 'lunch_start':
-        # Must be clocked in first and not already started lunch
         if not employee.last_clock_in or employee.last_clock_in.date() != today:
             return False, 'You must clock in first.'
         if employee.last_lunch_start and employee.last_lunch_start.date() == today:
@@ -700,7 +644,6 @@ def can_perform_time_action(employee, action_type):
         return True, ''
     
     elif action_type == 'lunch_end':
-        # Must have started lunch first and not already ended lunch
         if not employee.last_lunch_start or employee.last_lunch_start.date() != today:
             return False, 'You must start lunch first.'
         if employee.last_lunch_end and employee.last_lunch_end.date() == today:
@@ -709,26 +652,14 @@ def can_perform_time_action(employee, action_type):
     
     return False, 'Invalid action.'
 
-def is_in_office(lat, lng):
-    """Check if coordinates are within office radius"""
-    from math import radians, sin, cos, sqrt, atan2
-    
-    # Convert degrees to radians
-    lat1 = radians(app.config['OFFICE_LATITUDE'])
-    lon1 = radians(app.config['OFFICE_LONGITUDE'])
-    lat2 = radians(lat)
-    lon2 = radians(lng)
-    
-    # Haversine formula
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    distance = 6371000 * c  # Earth radius in meters
-    
-    return distance <= app.config['OFFICE_RADIUS_METERS']
+def is_in_office_ip(ip):
+    """Check if IP is within office network range"""
+    try:
+        network = ipaddress.ip_network(app.config['OFFICE_NETWORK'])
+        return ipaddress.ip_address(ip) in network
+    except ValueError:
+        return False
 
-# HR Directory Pages
 @app.route('/employee_directory')
 @login_required
 def employee_directory():
@@ -738,8 +669,7 @@ def employee_directory():
 @app.route('/department_directory')
 @login_required
 def department_directory():
-    # This would normally query departments from a Department model
-    departments = ["HR", "IT", "Finance", "Marketing", "Operations"]  # Placeholder
+    departments = ["HR", "IT", "Finance", "Marketing", "Operations"]
     return render_template('department_directory.html', departments=departments)
 
 @app.route('/performance_reviews')
@@ -750,11 +680,9 @@ def performance_reviews():
 @app.route('/leaves')
 @login_required
 def leaves():
-    # For admin/supervisor: show all pending requests
     if current_user.user_type in ['admin', 'supervisor']:
         pending_requests = LeaveRequest.query.filter_by(status='pending').all()
         return render_template('leaves.html', pending_requests=pending_requests)
-    # For employees: show their leave requests and balance
     else:
         user_requests = LeaveRequest.query.filter_by(employee_id=current_user.id).order_by(LeaveRequest.created_at.desc()).all()
         return render_template('leaves.html', user_requests=user_requests)
@@ -765,11 +693,9 @@ def request_leave():
     form = LeaveRequestForm()
     
     if form.validate_on_submit():
-        # Calculate number of days
         delta = form.end_date.data - form.start_date.data
-        days_requested = delta.days + 1  # Inclusive of both start and end dates
+        days_requested = delta.days + 1
         
-        # Validate leave days
         compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
         is_valid, error_message = validate_leave_days(
             form.leave_type.data, days_requested, compassionate_type
@@ -779,21 +705,17 @@ def request_leave():
             flash(error_message, 'danger')
             return render_template('request_leave.html', form=form)
         
-        # Handle file upload
         attachment_filename = None
         if form.attachment.data:
-            # Create upload folder if it doesn't exist
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
             
-            # Generate unique filename
             filename = secure_filename(form.attachment.data.filename)
             unique_filename = f"{uuid.uuid4().hex}_{filename}"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             form.attachment.data.save(file_path)
             attachment_filename = unique_filename
         
-        # Create leave request
         leave_request = LeaveRequest(
             employee_id=current_user.id,
             start_date=form.start_date.data,
@@ -809,7 +731,6 @@ def request_leave():
         db.session.add(leave_request)
         db.session.commit()
         
-        # Send notification to admins
         if send_leave_request_notification(leave_request):
             flash('Leave request submitted successfully! Admins have been notified.', 'success')
         else:
@@ -832,7 +753,6 @@ def approve_leave(request_id):
     
     db.session.commit()
     
-    # Send email notification to employee
     subject = f"Your Leave Request Has Been Approved"
     body = f"""
 Dear {leave_request.employee.full_name},
@@ -871,7 +791,6 @@ def reject_leave(request_id):
     
     db.session.commit()
     
-    # Send email notification to employee
     subject = f"Your Leave Request Has Been Rejected"
     body = f"""
 Dear {leave_request.employee.full_name},
@@ -899,7 +818,6 @@ HR Department
     
     return redirect(url_for('leaves'))
 
-
 @app.route('/manage_employees')
 @login_required
 def manage_employees():
@@ -920,15 +838,12 @@ def add_employee():
     form = AddEmployeeForm()
     
     if form.validate_on_submit():
-        # Generate username from email
         username = form.email.data.split('@')[0]
         
-        # Check if username already exists
         if Employee.query.filter_by(username=username).first():
             flash('Username already exists. Please use a different email.', 'danger')
             return render_template('add_employee.html', form=form)
         
-        # Generate temporary password
         temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(8))
         
         employee = Employee(
@@ -945,7 +860,6 @@ def add_employee():
         db.session.add(employee)
         db.session.commit()
         
-        # Send welcome email with credentials
         subject = "Your HR Nexus Account Has Been Created"
         body = f"""
 Dear {form.full_name.data},
@@ -974,7 +888,7 @@ HR Department
 
 @app.route('/download_attachment/<filename>')
 @login_required
-def download_leave_attachment(filename):  # Changed function name
+def download_leave_attachment(filename):
     if current_user.user_type not in ['admin', 'supervisor']:
         flash('You do not have permission to view attachments.', 'danger')
         return redirect(url_for('leaves'))
@@ -1012,15 +926,12 @@ def bulk_add_employees():
                 
                 full_name, email, department, position, user_type = data
                 
-                # Generate username from email
                 username = email.split('@')[0]
                 
-                # Check if user already exists
                 if Employee.query.filter((Employee.username == username) | (Employee.email == email)).first():
                     error_count += 1
                     continue
                 
-                # Generate temporary password
                 temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(8))
                 
                 employee = Employee(
@@ -1037,7 +948,6 @@ def bulk_add_employees():
                 db.session.add(employee)
                 success_count += 1
                 
-                # Send welcome email
                 subject = "Your HR Nexus Account Has Been Created"
                 body = f"""
 Dear {full_name},
@@ -1073,17 +983,14 @@ def all_leaves():
         flash('You do not have permission to view all leaves.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Get filter parameters
     employee_name = request.args.get('employee_name', '')
     leave_type = request.args.get('leave_type', '')
     status = request.args.get('status', '')
     start_date_filter = request.args.get('start_date_filter', '')
     end_date_filter = request.args.get('end_date_filter', '')
     
-    # Build query
     query = LeaveRequest.query
     
-    # Apply filters
     if employee_name:
         query = query.join(Employee).filter(Employee.full_name.ilike(f'%{employee_name}%'))
     
@@ -1107,7 +1014,6 @@ def all_leaves():
         except ValueError:
             pass
     
-    # Get the filtered leaves
     all_requests = query.order_by(LeaveRequest.created_at.desc()).all()
     
     return render_template('all_leaves.html', all_requests=all_requests)
@@ -1119,21 +1025,17 @@ def export_leaves():
         flash('You do not have permission to export leaves.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Get filter parameters
     employee_name = request.args.get('employee_name', '')
     leave_type = request.args.get('leave_type', '')
     status = request.args.get('status', '')
     start_date_filter = request.args.get('start_date_filter', '')
     end_date_filter = request.args.get('end_date_filter', '')
     
-    # Get date range parameters for export
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     
-    # Build query
     query = LeaveRequest.query
     
-    # Apply filters
     if employee_name:
         query = query.join(Employee).filter(Employee.full_name.ilike(f'%{employee_name}%'))
     
@@ -1157,7 +1059,6 @@ def export_leaves():
         except ValueError:
             pass
     
-    # Apply export date range if provided
     if start_date_str:
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
@@ -1172,18 +1073,14 @@ def export_leaves():
         except ValueError:
             pass
     
-    # Get the filtered leaves
     leaves = query.order_by(LeaveRequest.created_at.desc()).all()
     
-    # Create CSV
     output = StringIO()
     writer = csv.writer(output)
     
-    # Write header
     writer.writerow(['Employee Name', 'Leave Type', 'Compassionate Type', 'Start Date', 'End Date', 
                      'Days Requested', 'Status', 'Reason', 'Submitted On', 'Approved/Rejected On'])
     
-    # Write data
     for leave in leaves:
         writer.writerow([
             leave.employee.full_name,
@@ -1198,7 +1095,6 @@ def export_leaves():
             leave.approved_at.strftime('%Y-%m-%d %H:%M') if leave.approved_at else 'N/A'
         ])
     
-    # Create filename with filter info
     filename_parts = ['leaves_export']
     
     if employee_name:
@@ -1218,7 +1114,6 @@ def export_leaves():
     
     filename = '_'.join(filename_parts) + '.csv'
     
-    # Create response
     output.seek(0)
     response = make_response(output.getvalue())
     response.headers['Content-Disposition'] = f'attachment; filename={filename}'
@@ -1237,11 +1132,9 @@ def admin_edit_leave(request_id):
     form = LeaveRequestForm(obj=leave_request)
     
     if form.validate_on_submit():
-        # Calculate number of days
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1
         
-        # Validate leave days
         compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
         is_valid, error_message = validate_leave_days(
             form.leave_type.data, days_requested, compassionate_type
@@ -1251,27 +1144,22 @@ def admin_edit_leave(request_id):
             flash(error_message, 'danger')
             return render_template('request_leave.html', form=form, admin_editing=True)
         
-        # Handle file upload
         if form.attachment.data:
-            # Delete old attachment if exists
             if leave_request.attachment_filename:
                 try:
                     os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
                 except:
                     pass
             
-            # Create upload folder if it doesn't exist
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
             
-            # Generate unique filename
             filename = secure_filename(form.attachment.data.filename)
             unique_filename = f"{uuid.uuid4().hex}_{filename}"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             form.attachment.data.save(file_path)
             leave_request.attachment_filename = unique_filename
         
-        # Update leave request
         leave_request.start_date = form.start_date.data
         leave_request.end_date = form.end_date.data
         leave_request.leave_type = form.leave_type.data
@@ -1295,14 +1183,12 @@ def admin_delete_leave(request_id):
     
     leave_request = LeaveRequest.query.get_or_404(request_id)
     
-    # Delete attachment if exists
     if leave_request.attachment_filename:
         try:
             os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
         except:
             pass
     
-    # Store info for flash message
     employee_name = leave_request.employee.full_name
     leave_type = leave_request.leave_type
     
@@ -1317,11 +1203,10 @@ def admin_delete_leave(request_id):
 def reject_approved_leave(request_id):
     if current_user.user_type != 'admin':
         flash('You do not have permission to reject approved leaves.', 'danger')
-        return redirect(url_for('leaves'))
+        return redirect(url_for('all_leaves'))
     
     leave_request = LeaveRequest.query.get_or_404(request_id)
     
-    # Only allow rejecting approved leaves
     if leave_request.status != 'approved':
         flash('Only approved leaves can be rejected.', 'danger')
         return redirect(url_for('all_leaves'))
@@ -1331,7 +1216,6 @@ def reject_approved_leave(request_id):
     
     db.session.commit()
     
-    # Send email notification to employee
     subject = f"Your Approved Leave Request Has Been Rejected"
     body = f"""
 Dear {leave_request.employee.full_name},
@@ -1359,54 +1243,15 @@ HR Department
     
     return redirect(url_for('all_leaves'))
 
-@login_required
-def edit_leave(request_id):
-    leave_request = LeaveRequest.query.get_or_404(request_id)
-    
-    # Check if user owns this request (employees, supervisors, factory workers can edit their own)
-    if leave_request.employee_id != current_user.id and current_user.user_type != 'admin':
-        flash('You can only edit your own leave requests.', 'danger')
-        return redirect(url_for('leaves'))
-    
-    # Check if request can be edited (only pending requests for non-admins)
-    if leave_request.status != 'pending' and current_user.user_type != 'admin':
-        flash('Only pending leave requests can be edited.', 'danger')
-        return redirect(url_for('leaves'))
-    
-    form = LeaveRequestForm(obj=leave_request)
-    
-    if form.validate_on_submit():
-        # Check if email was changed and if it already exists
-        if form.email.data != employee.email:
-            existing_employee = Employee.query.filter_by(email=form.email.data).first()
-            if existing_employee and existing_employee.id != employee.id:
-                flash('Email already exists. Please use a different email.', 'danger')
-                return render_template('edit_employee.html', form=form, employee=employee)
-        
-        # Update employee details
-        employee.full_name = form.full_name.data
-        employee.email = form.email.data
-        employee.department = form.department.data
-        employee.position = form.position.data
-        employee.user_type = form.user_type.data
-        
-        db.session.commit()
-        flash('Employee details updated successfully!', 'success')
-        return redirect(url_for('leaves'))
-    
-    return render_template('request_leave.html', form=form, editing=True)
-
 @app.route('/edit_leave/<int:request_id>', methods=['GET', 'POST'])
 @login_required
 def edit_leave(request_id):
     leave_request = LeaveRequest.query.get_or_404(request_id)
     
-    # Check if user owns this request or is admin
     if leave_request.employee_id != current_user.id and current_user.user_type != 'admin':
         flash('You can only edit your own leave requests.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Check if request can be edited (only pending requests)
     if leave_request.status != 'pending':
         flash('Only pending leave requests can be edited.', 'danger')
         return redirect(url_for('leaves'))
@@ -1414,11 +1259,9 @@ def edit_leave(request_id):
     form = LeaveRequestForm(obj=leave_request)
     
     if form.validate_on_submit():
-        # Calculate number of days
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1
         
-        # Validate leave days
         compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
         is_valid, error_message = validate_leave_days(
             form.leave_type.data, days_requested, compassionate_type
@@ -1428,27 +1271,22 @@ def edit_leave(request_id):
             flash(error_message, 'danger')
             return render_template('request_leave.html', form=form)
         
-        # Handle file upload
         if form.attachment.data:
-            # Delete old attachment if exists
             if leave_request.attachment_filename:
                 try:
                     os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
                 except:
                     pass
             
-            # Create upload folder if it doesn't exist
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
             
-            # Generate unique filename
             filename = secure_filename(form.attachment.data.filename)
             unique_filename = f"{uuid.uuid4().hex}_{filename}"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             form.attachment.data.save(file_path)
             leave_request.attachment_filename = unique_filename
         
-        # Update leave request
         leave_request.start_date = form.start_date.data
         leave_request.end_date = form.end_date.data
         leave_request.leave_type = form.leave_type.data
@@ -1468,17 +1306,14 @@ def edit_leave(request_id):
 def delete_leave(request_id):
     leave_request = LeaveRequest.query.get_or_404(request_id)
     
-    # Check if user owns this request (employees, supervisors, factory workers can delete their own)
     if leave_request.employee_id != current_user.id and current_user.user_type != 'admin':
         flash('You can only delete your own leave requests.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Check if request can be deleted (only pending requests for non-admins)
     if leave_request.status != 'pending' and current_user.user_type != 'admin':
         flash('Only pending leave requests can be deleted.', 'danger')
         return redirect(url_for('leaves'))
     
-    # Delete attachment if exists
     if leave_request.attachment_filename:
         try:
             os.remove(os.path.join(app.config['UPLOAD_FOLDER'], leave_request.attachment_filename))
@@ -1500,14 +1335,12 @@ def reset_password(employee_id):
     
     employee = Employee.query.get_or_404(employee_id)
     
-    # Generate a new temporary password
     characters = string.ascii_letters + string.digits
     temp_password = ''.join(random.choice(characters) for i in range(10))
     employee.password = generate_password_hash(temp_password)
     
     db.session.commit()
     
-    # Try to send email
     subject = "Your Password Has Been Reset"
     body = f"""
 Dear {employee.full_name},
@@ -1529,7 +1362,6 @@ HR Department
     if email_sent:
         flash('Password reset successfully. Email notification sent.', 'success')
     else:
-        # Store the password in session to display to admin
         flash(f'Password reset successfully. New password: {temp_password}. Failed to send email.', 'warning')
     
     return redirect(url_for('manage_employees'))
@@ -1551,38 +1383,6 @@ def test_email():
     
     return redirect(url_for('dashboard'))
 
-def send_leave_request_notification(leave_request):
-    """Send email notification to admins about new leave request"""
-    # Get all admin users
-    admins = Employee.query.filter(Employee.user_type == 'admin').all()
-    
-    if not admins:
-        return False
-    
-    subject = f"New Leave Request from {leave_request.employee.full_name}"
-    body = f"""
-A new leave request has been submitted.
-
-Employee: {leave_request.employee.full_name}
-Leave Type: {leave_request.leave_type.title()}
-Dates: {leave_request.start_date.strftime('%Y-%m-%d')} to {leave_request.end_date.strftime('%Y-%m-%d')}
-Days: {leave_request.days_requested}
-Reason: {leave_request.reason}
-
-Please review the request in the HR system.
-
-Thank you,
-Hercules HR
-"""
-    
-    # Send email to all admins
-    success = True
-    for admin in admins:
-        if not send_email(admin.email, subject, body):
-            success = False
-    
-    return success
-
 @app.route('/recruitment')
 @login_required
 def recruitment():
@@ -1596,11 +1396,9 @@ def reports():
 @app.route('/time_reports')
 @login_required
 def time_reports():
-    # Get all employees for admin filter (if needed)
     employees = Employee.query.all() if current_user.user_type == 'admin' else []
     
     if current_user.user_type == 'admin':
-        # Admin can see all records with filters
         employee_id = request.args.get('employee_id')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
@@ -1619,7 +1417,6 @@ def time_reports():
         
         time_records = query.order_by(TimeTracking.timestamp.desc()).all()
     else:
-        # Regular users only see their own records
         time_records = TimeTracking.query.filter_by(employee_id=current_user.id).order_by(TimeTracking.timestamp.desc()).all()
     
     return render_template('time_reports.html', time_records=time_records, employees=employees)
@@ -1631,13 +1428,11 @@ def export_time_reports():
         flash('You do not have permission to export time reports.', 'danger')
         return redirect(url_for('time_reports'))
     
-    # Get filter parameters
     employee_id = request.args.get('employee_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     status = request.args.get('status')
     
-    # Build query
     query = TimeTracking.query.join(Employee)
     
     if employee_id:
@@ -1651,26 +1446,20 @@ def export_time_reports():
     
     time_records = query.order_by(TimeTracking.timestamp.desc()).all()
     
-    # Create CSV
     output = StringIO()
     writer = csv.writer(output)
     
-    # Write header
-    writer.writerow(['Employee Name', 'Action Type', 'Timestamp', 'Status', 'Address', 'Latitude', 'Longitude'])
+    writer.writerow(['Employee Name', 'Action Type', 'Timestamp', 'Status', 'IP Address'])
     
-    # Write data
     for record in time_records:
         writer.writerow([
             record.employee.full_name,
             record.action_type.replace('_', ' ').title(),
             record.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
             record.status.replace('_', ' ').title() if record.status else 'N/A',
-            record.address or 'N/A',
-            record.latitude or 'N/A',
-            record.longitude or 'N/A'
+            record.ip_address or 'N/A'
         ])
     
-    # Create response
     output.seek(0)
     response = make_response(output.getvalue())
     response.headers['Content-Disposition'] = 'attachment; filename=time_tracking_export.csv'
@@ -1688,11 +1477,9 @@ def test_connection():
     return "Connection successful! Flask is working."
 
 if __name__ == '__main__':
-    # Create the instance folder if it doesn't exist
     if not os.path.exists(app.instance_path):
         os.makedirs(app.instance_path)
     
-    # Get your actual WiFi IP address
     def get_wifi_ip():
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
