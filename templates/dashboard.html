@@ -28,7 +28,7 @@
                     <input type="hidden" name="latitude" id="latitude">
                     <input type="hidden" name="longitude" id="longitude">
                     <input type="hidden" name="address" id="address">
-                    
+            
                     {% if not current_user.last_clock_in or current_user.last_clock_in.date() != now.date() %}
                     <button type="button" data-action="clock_in" class="time-btn btn-primary" id="clockButton">
                         <span class="btn-icon">📅</span>
@@ -40,7 +40,7 @@
                         <span class="btn-text">Clock Out</span>
                     </button>
                     {% endif %}
-                    
+            
                     {% if current_user.last_clock_in and current_user.last_clock_in.date() == now.date() and (not current_user.last_lunch_start or current_user.last_lunch_start.date() != now.date()) %}
                     <button type="button" data-action="lunch_start" class="time-btn btn-warning" id="lunchButton">
                         <span class="btn-icon">🍽️</span>
@@ -60,7 +60,7 @@
                 </form>
             </div>
         </div>
-    </div>
+    </div> <!-- Closing div for dashboard-top-row -->
 
     <!-- Quick Stats - BELOW THE HORIZONTAL SECTION -->
     <div class="stats-grid">
@@ -425,13 +425,13 @@
     .dashboard-top-row {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: stretch;
         margin-bottom: 30px;
         gap: 20px;
         flex-wrap: wrap;
     }
     
-    .welcome-section {
+    .welcome-section, .time-tracking-section {
         flex: 1;
         padding: 25px;
         border-radius: 12px;
@@ -439,6 +439,12 @@
         background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(10px);
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .welcome-section {
+        justify-content: center;
     }
     
     .welcome-section h2 {
@@ -460,45 +466,45 @@
         font-size: 0.9rem;
     }
     
-    .time-tracking-section {
-        flex: 1;
-        padding: 25px;
-        border-radius: 12px;
-        min-width: 300px;
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(10px);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
     .time-tracking-section h3 {
-        margin-bottom: 15px;
+        margin-bottom: 20px;
         color: #333;
         text-align: center;
     }
     
     .time-tracking-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
+        flex-grow: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
     
-    /* Button Styles */
+    .time-tracking-grid form {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+    }
+    
     .time-btn {
-        min-height: 50px;
+        height: 60px;
+        min-width: 140px;
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        padding: 14px;
+        padding: 14px 20px;
         border: none;
         border-radius: 8px;
         cursor: pointer;
-        width: 100%;
         font-weight: 600;
         font-size: 1rem;
         color: white;
         transition: all 0.3s ease;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        flex: 1;
     }
     
     .btn-primary {
@@ -668,6 +674,14 @@
             min-width: 100%;
         }
         
+        .time-tracking-grid form {
+            flex-direction: column;
+        }
+        
+        .time-btn {
+            width: 100%;
+        }
+        
         .stats-grid {
             grid-template-columns: 1fr;
         }
@@ -680,11 +694,6 @@
         
         .cards-grid {
             grid-template-columns: 1fr;
-        }
-        
-        .time-btn {
-            padding: 12px;
-            font-size: 0.9rem;
         }
     }
 </style>
