@@ -41,6 +41,58 @@ footer {
     width: 100%;
 }
 
+/* Time Tracking Button Fixes - UPDATED */
+.time-tracking-section .time-btn {
+    min-height: 50px !important;
+    min-width: 120px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    padding: 14px !important;
+    border: none !important;
+    border-radius: var(--border-radius) !important;
+    cursor: pointer !important;
+    width: 100% !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    color: white !important;
+}
+
+    .time-tracking-section .time-btn span {
+        display: inline-block !important;
+        visibility: visible !important;
+    }
+
+/* Specific button styles */
+.time-tracking-section .clock-in-btn {
+    background: var(--gradient-success) !important;
+}
+
+.time-tracking-section .clock-out-btn {
+    background: var(--gradient-danger) !important;
+}
+
+.time-tracking-section .lunch-start-btn {
+    background: var(--gradient-warning) !important;
+}
+
+.time-tracking-section .lunch-end-btn {
+    background: var(--gradient-info) !important;
+}
+
+.time-tracking-section .lunch-disabled-btn {
+    background: var(--gray) !important;
+    cursor: not-allowed !important;
+}
+
+/* Override the mobile button styles specifically for time tracking */
+.time-tracking-section .btn,
+.time-tracking-section a[role="button"] {
+    min-height: auto !important;
+    min-width: auto !important;
+}
+
 /* Better touch targets for mobile */
 @media (max-width: 768px) {
     .sidebar-menu a {
@@ -57,9 +109,22 @@ footer {
         font-size: 16px;
     }
 
-    /* Larger tap targets for buttons */
-    button, .btn, a[role="button"] {
+    /* Larger tap targets for buttons - but exclude time tracking buttons */
+    button:not(.time-tracking-section .time-btn),
+    .btn:not(.time-tracking-section .btn),
+    a[role="button"]:not(.time-tracking-section a[role="button"]) {
         min-height: 44px;
         min-width: 44px;
     }
+
+    /* Mobile responsive fixes for time tracking */
+    .time-tracking-section {
+        min-width: 100% !important;
+        margin-top: 20px;
+    }
+
+        .time-tracking-section .time-btn {
+            padding: 12px !important;
+            font-size: 0.9rem !important;
+        }
 }

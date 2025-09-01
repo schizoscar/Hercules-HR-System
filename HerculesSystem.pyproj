@@ -38,6 +38,7 @@
     <Content Include="templates\add_employee.html" />
     <Content Include="templates\bulk_add_employees.html" />
     <Content Include="templates\edit_employee.html" />
+    <Content Include="templates\time_reports.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->
   <ItemGroup>

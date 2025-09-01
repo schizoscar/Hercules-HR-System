@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Time Reports{% endblock %}
+
+{% block header %}Time Tracking Reports{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Export Section -->
+    {% if current_user.user_type == 'admin' %}
+    <div class="glass" style="padding: 20px; border-radius: var(--border-radius-lg); margin-bottom: 25px;">
+        <h3 style="margin-bottom: 15px;">Export Time Reports</h3>
+        <form method="GET" action="{{ url_for('export_time_reports') }}">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                {% if current_user.user_type == 'admin' %}
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Employee</label>
+                    <select name="employee_id" style="width: 100%; padding: 10px; border-radius: var(--border-radius); border: 1px solid #ddd;">
+                        <option value="">All Employees</option>
+                        {% for employee in employees %}
+                        <option value="{{ employee.id }}">{{ employee.full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Start Date</label>
+                    <input type="date" name="start_date" style="width: 100%; padding: 10px; border-radius: var(--border-radius); border: 1px solid #ddd;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">End Date</label>
+                    <input type="date" name="end_date" style="width: 100%; padding: 10px; border-radius: var(--border-radius); border: 1px solid #ddd;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Status</label>
+                    <select name="status" style="width: 100%; padding: 10px; border-radius: var(--border-radius); border: 1px solid #ddd;">
+                        <option value="">All Status</option>
+                        <option value="in_office">In Office</option>
+                        <option value="out_of_office">Out of Office</option>
+                    </select>
+                </div>
+                <div>
+                    <button type="submit" style="background: var(--gradient-primary); color: white; padding: 10px 20px; border: none; border-radius: var(--border-radius); cursor: pointer; width: 100%;">
+                        Export CSV
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Time Records Table -->
+    <div class="glass" style="padding: 25px; border-radius: var(--border-radius-lg);">
+        <h3 style="margin-bottom: 20px;">Time Tracking Records</h3>
+        
+        {% if time_records %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: rgba(67, 97, 238, 0.1);">
+                        {% if current_user.user_type == 'admin' %}
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Employee</th>
+                        {% endif %}
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Action</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Timestamp</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Status</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Location</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in time_records %}
+                    <tr>
+                        {% if current_user.user_type == 'admin' %}
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.employee.full_name }}</td>
+                        {% endif %}
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <span style="
+                                padding: 4px 8px;
+                                border-radius: 12px;
+                                font-size: 0.8rem;
+                                font-weight: 500;
+                                {% if record.action_type == 'clock_in' %}background: #d4edda; color: #155724;
+                                {% elif record.action_type == 'clock_out' %}background: #f8d7da; color: #721c24;
+                                {% elif record.action_type == 'lunch_start' %}background: #fff3cd; color: #856404;
+                                {% elif record.action_type == 'lunch_end' %}background: #cce5ff; color: #004085;
+                                {% endif %}
+                            ">
+                                {{ record.action_type.replace('_', ' ').title() }}
+                            </span>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <span style="
+                                padding: 4px 8px;
+                                border-radius: 12px;
+                                font-size: 0.8rem;
+                                font-weight: 500;
+                                {% if record.status == 'in_office' %}background: #d4edda; color: #155724;
+                                {% else %}background: #f8d7da; color: #721c24;
+                                {% endif %}
+                            ">
+                                {{ record.status.replace('_', ' ').title() if record.status else 'N/A' }}
+                            </span>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.address or 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="text-align: center; color: var(--gray); padding: 40px;">No time tracking records found.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

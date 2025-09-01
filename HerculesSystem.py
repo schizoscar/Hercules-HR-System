@@ -1,9 +1,10 @@
+import requests
 from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
-from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, FileField
+from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, FileField, HiddenField
 from wtforms.validators import DataRequired, Length, Email
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -20,6 +21,7 @@ from email.mime.multipart import MIMEMultipart
 import random
 import string
 import uuid
+import logging
 
 # handler for the bad requests
 import werkzeug.serving
@@ -34,6 +36,15 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Output to terminal
+        logging.FileHandler('hr_system.log')  # Save to file
+    ]
+)
+
 # Email configuration - Update these values
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -45,6 +56,11 @@ app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
 # configuration for leave file uploads
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Office coordinates (set your office coordinates here)
+app.config['OFFICE_LATITUDE'] = 3.1390  # Example: Kuala Lumpur coordinates
+app.config['OFFICE_LONGITUDE'] = 101.6869
+app.config['OFFICE_RADIUS_METERS'] = 100  # 100 meter radius
 
 def send_email(to_email, subject, body):
     """Send email using SMTP with better error handling"""
@@ -141,11 +157,29 @@ class Employee(UserMixin, db.Model):
     hire_date = db.Column(db.Date)
     is_admin = db.Column(db.Boolean, default=False)
     user_type = db.Column(db.String(20), default='employee')  # admin, supervisor, office, factory
+    # Time tracking fields
+    last_clock_in = db.Column(db.DateTime)
+    last_clock_out = db.Column(db.DateTime)  # Fixed typo: ast_clock_out -> last_clock_out
+    last_lunch_start = db.Column(db.DateTime)
+    last_lunch_end = db.Column(db.DateTime)
     
     def generate_temp_password(self):
         """Generate a temporary password"""
         characters = string.ascii_letters + string.digits
         return ''.join(random.choice(characters) for i in range(8))
+
+class TimeTracking(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    action_type = db.Column(db.String(20), nullable=False)  # clock_in, clock_out, lunch_start, lunch_end
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
+    address = db.Column(db.String(200))
+    status = db.Column(db.String(20))  # in_office, out_of_office
+    
+    # Relationship
+    employee = db.relationship('Employee', backref=db.backref('time_tracking', lazy=True))
 
 # Forms
 class LoginForm(FlaskForm):
@@ -208,6 +242,60 @@ def add_is_admin_column():
     except Exception as e:
         print(f"Error checking/adding columns: {e}")
 
+def add_time_tracking_columns():
+    """Add time tracking columns to the employee table if they don't exist"""
+    try:
+        # Connect to the SQLite database
+        conn = sqlite3.connect(os.path.join(app.instance_path, 'hr.db'))
+        cursor = conn.cursor()
+        
+        # Check if the time tracking columns exist
+        cursor.execute("PRAGMA table_info(employee)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        time_tracking_columns = [
+            'last_clock_in',
+            'last_clock_out', 
+            'last_lunch_start',
+            'last_lunch_end'
+        ]
+        
+        for column in time_tracking_columns:
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE employee ADD COLUMN {column} DATETIME")
+                print(f"Added {column} column to employee table")
+        
+        # Check if TimeTracking table exists, if not create it
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='time_tracking'")
+        if not cursor.fetchone():
+            # Create TimeTracking table
+            cursor.execute("""
+                CREATE TABLE time_tracking (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER NOT NULL,
+                    action_type VARCHAR(20) NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    latitude FLOAT,
+                    longitude FLOAT,
+                    address VARCHAR(200),
+                    status VARCHAR(20),
+                    FOREIGN KEY (employee_id) REFERENCES employee (id)
+                )
+            """)
+            print("Created time_tracking table")
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error checking/adding time tracking columns: {e}")
+
+class TimeTrackingForm(FlaskForm):
+    action_type = HiddenField('Action Type', validators=[DataRequired()])
+    latitude = HiddenField('Latitude')
+    longitude = HiddenField('Longitude')
+    address = HiddenField('Address')
+    submit = SubmitField('Perform Action')
+
 class AddEmployeeForm(FlaskForm):
     full_name = StringField('Full Name', validators=[DataRequired()])
     email = StringField('Email', validators=[DataRequired(), Email()])
@@ -253,6 +341,8 @@ with app.app_context():
     
     # Add the is_admin column if it doesn't exist
     add_is_admin_column()
+    # Add time tracking columns if they don't exist
+    add_time_tracking_columns()
 
 @app.before_request
 def before_request():
@@ -505,12 +595,138 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    form = TimeTrackingForm()  # Create the form instance
+    
     # Factory workers only see leaves management
     if current_user.user_type == 'factory':
-        return render_template('factory_dashboard.html')
+        return render_template('factory_dashboard.html', form=form)
     
     # Regular dashboard for other users
-    return render_template('dashboard.html')
+    return render_template('dashboard.html', form=form)
+
+@app.route('/log_error', methods=['POST'])
+def log_error():
+    error_data = request.get_json()
+    logging.error(f"Client-side error: {error_data}")
+    return '', 204
+
+@app.route('/time_tracking', methods=['POST'])
+@login_required
+def time_tracking():
+    form = TimeTrackingForm()
+    
+    logging.debug(f"Time tracking attempt by {current_user.username}: {request.form}")
+    
+    if form.validate_on_submit():
+        action_type = form.action_type.data
+        latitude = form.latitude.data
+        longitude = form.longitude.data
+        address = form.address.data
+        
+        # Log the action details
+        logging.info(f"Processing {action_type} for {current_user.username}, Lat: {latitude or 'N/A'}, Lon: {longitude or 'N/A'}, Address: {address or 'N/A'}")
+        
+        # Check if user can perform this action
+        can_perform, error_message = can_perform_time_action(current_user, action_type)
+        if not can_perform:
+            logging.warning(f"Action {action_type} blocked for {current_user.username}: {error_message}")
+            flash(error_message, 'danger')
+            return redirect(url_for('dashboard'))
+        
+        # Convert latitude/longitude to float if provided, else None
+        latitude = float(latitude) if latitude else None
+        longitude = float(longitude) if longitude else None
+        
+        # Determine if in office based on coordinates
+        in_office = is_in_office(latitude, longitude) if latitude and longitude else False
+        status = 'in_office' if in_office else 'out_of_office'
+        
+        # Create time tracking record
+        time_record = TimeTracking(
+            employee_id=current_user.id,
+            action_type=action_type,
+            latitude=latitude,
+            longitude=longitude,
+            address=address,
+            status=status
+        )
+        
+        # Update employee's last action timestamps
+        if action_type == 'clock_in':
+            current_user.last_clock_in = datetime.utcnow()
+        elif action_type == 'clock_out':
+            current_user.last_clock_out = datetime.utcnow()
+        elif action_type == 'lunch_start':
+            current_user.last_lunch_start = datetime.utcnow()
+        elif action_type == 'lunch_end':
+            current_user.last_lunch_end = datetime.utcnow()
+        
+        db.session.add(time_record)
+        db.session.commit()
+        
+        logging.info(f"Successfully recorded {action_type} for {current_user.username}, Status: {status}")
+        flash(f'Successfully recorded {action_type.replace("_", " ")}!', 'success')
+    else:
+        logging.error(f"Form validation failed for {current_user.username}: {form.errors}")
+        flash('Invalid form data. Please try again.', 'danger')
+    
+    return redirect(url_for('dashboard'))
+
+def can_perform_time_action(employee, action_type):
+    """Check if employee can perform the requested time action"""
+    now = datetime.utcnow()
+    today = now.date()
+    
+    if action_type == 'clock_in':
+        # Check if already clocked in today
+        if employee.last_clock_in and employee.last_clock_in.date() == today:
+            return False, 'You have already clocked in today.'
+        return True, ''
+    
+    elif action_type == 'clock_out':
+        # Must be clocked in first and not already clocked out
+        if not employee.last_clock_in or employee.last_clock_in.date() != today:
+            return False, 'You must clock in first.'
+        if employee.last_clock_out and employee.last_clock_out.date() == today:
+            return False, 'You have already clocked out today.'
+        return True, ''
+    
+    elif action_type == 'lunch_start':
+        # Must be clocked in first and not already started lunch
+        if not employee.last_clock_in or employee.last_clock_in.date() != today:
+            return False, 'You must clock in first.'
+        if employee.last_lunch_start and employee.last_lunch_start.date() == today:
+            return False, 'You have already started lunch today.'
+        return True, ''
+    
+    elif action_type == 'lunch_end':
+        # Must have started lunch first and not already ended lunch
+        if not employee.last_lunch_start or employee.last_lunch_start.date() != today:
+            return False, 'You must start lunch first.'
+        if employee.last_lunch_end and employee.last_lunch_end.date() == today:
+            return False, 'You have already ended lunch today.'
+        return True, ''
+    
+    return False, 'Invalid action.'
+
+def is_in_office(lat, lng):
+    """Check if coordinates are within office radius"""
+    from math import radians, sin, cos, sqrt, atan2
+    
+    # Convert degrees to radians
+    lat1 = radians(app.config['OFFICE_LATITUDE'])
+    lon1 = radians(app.config['OFFICE_LONGITUDE'])
+    lat2 = radians(lat)
+    lon2 = radians(lng)
+    
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    distance = 6371000 * c  # Earth radius in meters
+    
+    return distance <= app.config['OFFICE_RADIUS_METERS']
 
 # HR Directory Pages
 @app.route('/employee_directory')
@@ -1376,6 +1592,91 @@ def recruitment():
 @login_required
 def reports():
     return render_template('reports.html')
+
+@app.route('/time_reports')
+@login_required
+def time_reports():
+    # Get all employees for admin filter (if needed)
+    employees = Employee.query.all() if current_user.user_type == 'admin' else []
+    
+    if current_user.user_type == 'admin':
+        # Admin can see all records with filters
+        employee_id = request.args.get('employee_id')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        status = request.args.get('status')
+        
+        query = TimeTracking.query.join(Employee)
+        
+        if employee_id:
+            query = query.filter(TimeTracking.employee_id == employee_id)
+        if start_date:
+            query = query.filter(TimeTracking.timestamp >= start_date)
+        if end_date:
+            query = query.filter(TimeTracking.timestamp <= end_date + ' 23:59:59')
+        if status:
+            query = query.filter(TimeTracking.status == status)
+        
+        time_records = query.order_by(TimeTracking.timestamp.desc()).all()
+    else:
+        # Regular users only see their own records
+        time_records = TimeTracking.query.filter_by(employee_id=current_user.id).order_by(TimeTracking.timestamp.desc()).all()
+    
+    return render_template('time_reports.html', time_records=time_records, employees=employees)
+
+@app.route('/export_time_reports')
+@login_required
+def export_time_reports():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to export time reports.', 'danger')
+        return redirect(url_for('time_reports'))
+    
+    # Get filter parameters
+    employee_id = request.args.get('employee_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    status = request.args.get('status')
+    
+    # Build query
+    query = TimeTracking.query.join(Employee)
+    
+    if employee_id:
+        query = query.filter(TimeTracking.employee_id == employee_id)
+    if start_date:
+        query = query.filter(TimeTracking.timestamp >= start_date)
+    if end_date:
+        query = query.filter(TimeTracking.timestamp <= end_date + ' 23:59:59')
+    if status:
+        query = query.filter(TimeTracking.status == status)
+    
+    time_records = query.order_by(TimeTracking.timestamp.desc()).all()
+    
+    # Create CSV
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(['Employee Name', 'Action Type', 'Timestamp', 'Status', 'Address', 'Latitude', 'Longitude'])
+    
+    # Write data
+    for record in time_records:
+        writer.writerow([
+            record.employee.full_name,
+            record.action_type.replace('_', ' ').title(),
+            record.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            record.status.replace('_', ' ').title() if record.status else 'N/A',
+            record.address or 'N/A',
+            record.latitude or 'N/A',
+            record.longitude or 'N/A'
+        ])
+    
+    # Create response
+    output.seek(0)
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = 'attachment; filename=time_tracking_export.csv'
+    response.headers['Content-type'] = 'text/csv'
+    
+    return response
 
 @app.route('/settings')
 @login_required
