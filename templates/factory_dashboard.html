@@ -10,10 +10,10 @@
     <div class="dashboard-top-row">
         <div class="welcome-section glass">
             <h2>Welcome, {{ current_user.full_name }}!</h2>
-            <p>Today is {{ now.strftime('%A, %B %d, %Y') }}</p>
-            {% if current_user.last_clock_in and current_user.last_clock_in.date() == now.date() %}
+            <p>Today is {{ now.strftime('%A, %B %d, %Y %I:%M %p MYT') }}</p>
+            {% if latest_clock_in and latest_clock_in.timestamp.astimezone(MYT).date() == now.date() %}
             <p class="clock-in-time">
-                ⏰ Clocked in at: {{ current_user.last_clock_in.strftime('%H:%M') }}
+                ⏰ Clocked in at: {{ latest_clock_in.timestamp.astimezone(MYT).strftime('%I:%M %p MYT') }}
             </p>
             {% endif %}
         </div>
@@ -25,9 +25,12 @@
                 <form id="timeTrackingForm" method="POST" action="{{ url_for('time_tracking') }}">
                     {{ form.hidden_tag() }}
                     <input type="hidden" name="action_type" id="actionType">
+                    <input type="hidden" name="latitude" id="latitude">
+                    <input type="hidden" name="longitude" id="longitude">
+                    <input type="hidden" name="address" id="address">
                     
                     <div class="button-container">
-                        {% if not current_user.last_clock_in or current_user.last_clock_in.date() != now.date() %}
+                        {% if not latest_clock_in or latest_clock_in.timestamp.astimezone(MYT).date() != now.date() %}
                         <button type="button" data-action="clock_in" class="time-btn btn-primary" id="clockButton">
                             <span class="btn-icon">📅</span>
                             <span class="btn-text">Clock In</span>
@@ -39,12 +42,12 @@
                         </button>
                         {% endif %}
                         
-                        {% if current_user.last_clock_in and current_user.last_clock_in.date() == now.date() and (not current_user.last_lunch_start or current_user.last_lunch_start.date() != now.date()) %}
+                        {% if latest_clock_in and latest_clock_in.timestamp.astimezone(MYT).date() == now.date() and (not latest_lunch_start or latest_lunch_start.timestamp.astimezone(MYT).date() != now.date()) %}
                         <button type="button" data-action="lunch_start" class="time-btn btn-warning" id="lunchButton">
                             <span class="btn-icon">🍽️</span>
                             <span class="btn-text">Start Lunch</span>
                         </button>
-                        {% elif current_user.last_lunch_start and current_user.last_lunch_start.date() == now.date() and (not current_user.last_lunch_end or current_user.last_lunch_end.date() != now.date()) %}
+                        {% elif latest_lunch_start and latest_lunch_start.timestamp.astimezone(MYT).date() == now.date() and (not latest_lunch_end or latest_lunch_end.timestamp.astimezone(MYT).date() != now.date()) %}
                         <button type="button" data-action="lunch_end" class="time-btn btn-info" id="lunchButton">
                             <span class="btn-icon">⏱️</span>
                             <span class="btn-text">End Lunch</span>
@@ -84,11 +87,17 @@
         const timeButtons = document.querySelectorAll('.time-btn:not(.btn-disabled)');
         const form = document.getElementById('timeTrackingForm');
         const actionTypeField = document.getElementById('actionType');
+        const latitudeField = document.getElementById('latitude');
+        const longitudeField = document.getElementById('longitude');
+        const addressField = document.getElementById('address');
 
         console.log('DOM loaded. Elements found:', {
             timeButtons: timeButtons.length,
             form: !!form,
-            actionTypeField: !!actionTypeField
+            actionTypeField: !!actionTypeField,
+            latitudeField: !!latitudeField,
+            longitudeField: !!longitudeField,
+            addressField: !!addressField
         });
 
         // Check for CSRF token
@@ -105,10 +114,17 @@
         const actionTypeInputs = form.querySelectorAll('input[name="action_type"]');
         if (actionTypeInputs.length > 1) {
             console.warn('Multiple action_type inputs found:', actionTypeInputs.length);
-            // Remove all but the first action_type input
             for (let i = 1; i < actionTypeInputs.length; i++) {
                 actionTypeInputs[i].remove();
             }
+        }
+
+        // Check geolocation support
+        if (!navigator.geolocation) {
+            console.error('Geolocation not supported by browser');
+            alert('Geolocation is not supported by your browser. Time tracking will proceed without location data.');
+            timeButtons.forEach(button => button.disabled = true);
+            return;
         }
 
         // Attach event listeners to buttons
@@ -118,51 +134,123 @@
                 const actionType = this.getAttribute('data-action');
                 console.log('Button clicked, action:', actionType);
 
-                if (!actionTypeField || !form) {
+                if (!actionTypeField || !form || !latitudeField || !longitudeField || !addressField) {
                     console.error('Missing elements:', {
                         actionTypeField: !!actionTypeField,
-                        form: !!form
+                        form: !!form,
+                        latitudeField: !!latitudeField,
+                        longitudeField: !!longitudeField,
+                        addressField: !!addressField
                     });
                     alert('An error occurred: Form elements not found. Please contact support.');
                     return;
                 }
 
-                try {
-                    actionTypeField.value = actionType;
-                    console.log('Set actionType to:', actionTypeField.value);
+                // Show loading state
+                const originalHTML = this.innerHTML;
+                this.innerHTML = '<span class="btn-icon">⏳</span><span class="btn-text">Getting location...</span>';
+                this.disabled = true;
 
-                    // Log form data before submission
-                    const formData = new FormData(form);
-                    console.log('Form data before submission:', Object.fromEntries(formData));
+                // Get geolocation
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        console.log('Geolocation success:', {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        });
 
-                    // Try native form submission
-                    console.log('Attempting native form submission...');
-                    form.submit();
-                } catch (error) {
-                    console.error('Error in button click handler:', error);
-                    alert('An error occurred while submitting the form. Please try again or contact support.');
+                        // Set form values
+                        actionTypeField.value = actionType;
+                        latitudeField.value = position.coords.latitude;
+                        longitudeField.value = position.coords.longitude;
 
-                    // Fallback to XMLHttpRequest
-                    console.log('Falling back to XMLHttpRequest...');
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', form.action, true);
-                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                    xhr.onreadystatechange = function () {
-                        if (xhr.readyState === XMLHttpRequest.DONE) {
-                            console.log('XHR status:', xhr.status, 'Response:', xhr.responseText);
-                            if (xhr.status === 200 || xhr.status === 302) {
-                                console.log('Submission successful, reloading page...');
-                                window.location.reload();
-                            } else {
-                                console.error('XHR failed:', xhr.status, xhr.responseText);
-                                alert('Form submission failed. Please try again or contact support.');
-                            }
+                        // Reverse geocoding
+                        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                console.log('Geocoding success:', { address: data.display_name || 'Unknown' });
+                                addressField.value = data.display_name || 'Unknown location';
+                                submitForm(form, this, originalHTML);
+                            })
+                            .catch(error => {
+                                console.error('Geocoding error:', error.message);
+                                addressField.value = 'Location lookup failed';
+                                submitForm(form, this, originalHTML);
+                            });
+                    },
+                    error => {
+                        console.error('Geolocation error:', { code: error.code, message: error.message });
+                        let errorMessage = 'Error getting location: ';
+                        switch (error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage += 'Permission denied. Please allow location access.';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage += 'Position unavailable. Ensure location services are enabled.';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage += 'Request timed out. Try again in a better signal area.';
+                                break;
+                            default:
+                                errorMessage += `Unknown error (Code ${error.code}).`;
+                                break;
                         }
-                    };
-                    xhr.send(new FormData(form));
-                }
+                        alert(`${errorMessage} Proceeding without location data.`);
+                        actionTypeField.value = actionType;
+                        latitudeField.value = '';
+                        longitudeField.value = '';
+                        addressField.value = 'Location unavailable';
+                        submitForm(form, this, originalHTML);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 8000,
+                        maximumAge: 0
+                    }
+                );
             });
         });
+
+        function submitForm(form, button, originalHTML) {
+            try {
+                const formData = new FormData(form);
+                console.log('Form data before submission:', Object.fromEntries(formData));
+                console.log('Attempting native form submission...');
+                form.submit();
+            } catch (error) {
+                console.error('Error in form submission:', error);
+                alert('An error occurred while submitting the form. Please try again or contact support.');
+                button.innerHTML = originalHTML;
+                button.disabled = false;
+
+                // Fallback to XMLHttpRequest
+                console.log('Falling back to XMLHttpRequest...');
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', form.action, true);
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === XMLHttpRequest.DONE) {
+                        console.log('XHR status:', xhr.status, 'Response:', xhr.responseText);
+                        if (xhr.status === 200 || xhr.status == 302) {
+                            console.log('Submission successful, reloading page...');
+                            window.location.reload();
+                        } else {
+                            console.error('XHR failed:', xhr.status, xhr.responseText);
+                            alert('Form submission failed. Please try again or contact support.');
+                            button.innerHTML = originalHTML;
+                            button.disabled = false;
+                        }
+                    }
+                };
+                xhr.send(new FormData(form));
+            }
+        }
 
         // Form submission logging
         form.addEventListener('submit', function (e) {

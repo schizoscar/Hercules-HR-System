@@ -24,6 +24,8 @@ import string
 import uuid
 import logging
 import ipaddress
+import pytz
+#from HerculesSystem import db
 
 # handler for the bad requests
 import werkzeug.serving
@@ -32,6 +34,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'hr.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Define Malaysia timezone
+MYT = pytz.timezone('Asia/Kuala_Lumpur')
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -169,14 +174,17 @@ class Employee(UserMixin, db.Model):
         return ''.join(random.choice(characters) for i in range(8))
 
 class TimeTracking(db.Model):
+    __tablename__ = 'time_tracking'
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
-    action_type = db.Column(db.String(20), nullable=False)  # clock_in, clock_out, lunch_start, lunch_end
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    status = db.Column(db.String(20))  # in_office, out_of_office
-    ip_address = db.Column(db.String(45))
-    
-    employee = db.relationship('Employee', backref=db.backref('time_tracking', lazy=True))
+    action_type = db.Column(db.String(20), nullable=False)  #clock_in, clock_out, lunch_start, lunch_end
+    timestamp = db.Column(db.DateTime, nullable=True)
+    latitude = db.Column(db.Float, nullable=True)
+    longitude = db.Column(db.Float, nullable=True)
+    address = db.Column(db.String(200), nullable=True)
+    status = db.Column(db.String(20), nullable=True)    # in/out office
+    ip_address = db.Column(db.String(45), nullable=True)
+    employee = db.relationship('Employee', backref=db.backref('time_entries', lazy=True))
 
 # Forms
 class LoginForm(FlaskForm):
@@ -544,9 +552,42 @@ def logout():
 @login_required
 def dashboard():
     form = TimeTrackingForm()
+    now = datetime.now(MYT)  # Set current time to MYT
+    # Get latest clock-in and lunch records for the current day
+    latest_clock_in = TimeTracking.query.filter(
+        TimeTracking.employee_id == current_user.id,
+        TimeTracking.action_type == 'clock_in',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
+    latest_lunch_start = TimeTracking.query.filter(
+        TimeTracking.employee_id == current_user.id,
+        TimeTracking.action_type == 'lunch_start',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
+    latest_lunch_end = TimeTracking.query.filter(
+        TimeTracking.employee_id == current_user.id,
+        TimeTracking.action_type == 'lunch_end',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
     if current_user.user_type == 'factory':
-        return render_template('factory_dashboard.html', form=form)
-    return render_template('dashboard.html', form=form)
+        return render_template(
+            'factory_dashboard.html',
+            form=form,
+            now=now,
+            MYT=MYT,
+            latest_clock_in=latest_clock_in,
+            latest_lunch_start=latest_lunch_start,
+            latest_lunch_end=latest_lunch_end
+        )
+    return render_template(
+        'dashboard.html',
+        form=form,
+        now=now,
+        MYT=MYT,
+        latest_clock_in=latest_clock_in,
+        latest_lunch_start=latest_lunch_start,
+        latest_lunch_end=latest_lunch_end
+    )
 
 @app.route('/log_error', methods=['POST'])
 def log_error():
@@ -558,66 +599,76 @@ def log_error():
 @login_required
 def time_tracking():
     form = TimeTrackingForm()
-    
-    logging.debug(f"Time tracking attempt by {current_user.username}: {request.form}")
-    
-    # Handle multiple action_type values by taking the last non-empty one
-    action_type_values = request.form.getlist('action_type')
-    valid_action_type = next((val for val in action_type_values if val), None)
-    
-    if not valid_action_type:
-        logging.error(f"No valid action_type received for {current_user.username}: {action_type_values}")
-        flash('Invalid action type. Please try again.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    # Manually populate form data to bypass validation issue
-    form.action_type.data = valid_action_type
-    
-    if not form.validate_on_submit():
-        logging.error(f"Form validation failed for {current_user.username}: {form.errors}")
-        flash('Invalid form data. Please try again.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    action_type = form.action_type.data
-    ip = request.remote_addr
-    
-    logging.info(f"Processing {action_type} for {current_user.username}, IP: {ip}")
-    
-    can_perform, error_message = can_perform_time_action(current_user, action_type)
-    if not can_perform:
-        logging.warning(f"Action {action_type} blocked for {current_user.username}: {error_message}")
-        flash(error_message, 'danger')
-        return redirect(url_for('dashboard'))
-    
-    in_office = is_in_office_ip(ip)
-    status = 'in_office' if in_office else 'out_of_office'
-    
-    time_record = TimeTracking(
-        employee_id=current_user.id,
-        action_type=action_type,
-        status=status,
-        ip_address=ip
-    )
-    
-    if action_type == 'clock_in':
-        current_user.last_clock_in = datetime.utcnow()
-    elif action_type == 'clock_out':
-        current_user.last_clock_out = datetime.utcnow()
-    elif action_type == 'lunch_start':
-        current_user.last_lunch_start = datetime.utcnow()
-    elif action_type == 'lunch_end':
-        current_user.last_lunch_end = datetime.utcnow()
-    
-    try:
-        db.session.add(time_record)
-        db.session.commit()
-        logging.info(f"Successfully recorded {action_type} for {current_user.username}, Status: {status}")
-        flash(f'Successfully recorded {action_type.replace("_", " ")}!', 'success')
-    except Exception as e:
-        db.session.rollback()
-        logging.error(f"Database error for {current_user.username} on {action_type}: {str(e)}")
-        flash('An error occurred while recording your action. Please try again.', 'danger')
-    
+    if form.validate_on_submit():
+        action_type = request.form.get('action_type')
+        now = datetime.now(MYT)  # Use MYT timezone
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        address = request.form.get('address')
+        ip_address = request.remote_addr
+
+        # Create a new time tracking entry
+        time_entry = TimeTracking(
+            employee_id=current_user.id,
+            action_type=action_type,
+            timestamp=now,
+            latitude=latitude if latitude else None,
+            longitude=longitude if longitude else None,
+            address=address if address else 'Unknown',
+            ip_address=ip_address,
+            status='completed' if action_type in ['clock_in', 'clock_out', 'lunch_start', 'lunch_end'] else None
+        )
+        db.session.add(time_entry)
+
+        # Validate state for clock_out and lunch actions
+        if action_type == 'clock_out':
+            latest_clock_in = TimeTracking.query.filter(
+                TimeTracking.employee_id == current_user.id,
+                TimeTracking.action_type == 'clock_in',
+                func.date(TimeTracking.timestamp) == now.date()
+            ).order_by(TimeTracking.timestamp.desc()).first()
+            if not latest_clock_in:
+                db.session.rollback()
+                flash('No clock-in record found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+        elif action_type == 'lunch_start':
+            latest_clock_in = TimeTracking.query.filter(
+                TimeTracking.employee_id == current_user.id,
+                TimeTracking.action_type == 'clock_in',
+                func.date(TimeTracking.timestamp) == now.date()
+            ).order_by(TimeTracking.timestamp.desc()).first()
+            latest_lunch_start = TimeTracking.query.filter(
+                TimeTracking.employee_id == current_user.id,
+                TimeTracking.action_type == 'lunch_start',
+                func.date(TimeTracking.timestamp) == now.date()
+            ).order_by(TimeTracking.timestamp.desc()).first()
+            if not latest_clock_in or (latest_lunch_start and not TimeTracking.query.filter(
+                TimeTracking.employee_id == current_user.id,
+                TimeTracking.action_type == 'lunch_end',
+                func.date(TimeTracking.timestamp) == now.date()
+            ).first()):
+                db.session.rollback()
+                flash('Cannot start lunch: No clock-in or lunch already started.', 'danger')
+                return redirect(url_for('dashboard'))
+        elif action_type == 'lunch_end':
+            latest_lunch_start = TimeTracking.query.filter(
+                TimeTracking.employee_id == current_user.id,
+                TimeTracking.action_type == 'lunch_start',
+                func.date(TimeTracking.timestamp) == now.date()
+            ).order_by(TimeTracking.timestamp.desc()).first()
+            if not latest_lunch_start:
+                db.session.rollback()
+                flash('No lunch start record found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+
+        try:
+            db.session.commit()
+            flash(f'Successfully {action_type.replace("_", " ")}!', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error during {action_type.replace("_", " ")}: {str(e)}', 'danger')
+    else:
+        flash('Invalid form submission.', 'danger')
     return redirect(url_for('dashboard'))
 
 def can_perform_time_action(employee, action_type):
@@ -903,6 +954,16 @@ def download_leave_attachment(filename):
     except FileNotFoundError:
         flash('Attachment not found.', 'danger')
         return redirect(url_for('leaves'))
+
+@app.route('/edit_employee/<int:employee_id>', methods=['GET', 'POST'])
+@login_required
+def edit_employee(employee_id):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to edit employees.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    employee = Employee.query.get_or_404(employee_id)
+    form = EditEmployeeForm(obj=employee)
 
 @app.route('/bulk_add_employees', methods=['GET', 'POST'])
 @login_required

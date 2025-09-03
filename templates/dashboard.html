@@ -10,7 +10,7 @@
     <div class="dashboard-top-row">
         <div class="welcome-section glass">
             <h2>Welcome, {{ current_user.full_name }}!</h2>
-            <p>Today is {{ now.strftime('%A, %B %d, %Y') }}</p>
+            <p>Today is {{ now.strftime('%A, %B %d, %Y %I:%M %p') }}</p>
             {% if current_user.last_clock_in and current_user.last_clock_in.date() == now.date() %}
             <p class="clock-in-time">
                 ⏰ Clocked in at: {{ current_user.last_clock_in.strftime('%H:%M') }}
