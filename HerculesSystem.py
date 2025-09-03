@@ -1058,16 +1058,18 @@ def all_leaves():
         flash('You do not have permission to view all leaves.', 'danger')
         return redirect(url_for('leaves'))
     
-    employee_name = request.args.get('employee_name', '')
+    employee_id = request.args.get('employee_id', '')
     leave_type = request.args.get('leave_type', '')
     status = request.args.get('status', '')
     start_date_filter = request.args.get('start_date_filter', '')
     end_date_filter = request.args.get('end_date_filter', '')
+    days_requested = request.args.get('days_requested', '')
+    reason = request.args.get('reason', '')
     
-    query = LeaveRequest.query
+    query = LeaveRequest.query.join(Employee, LeaveRequest.employee_id == Employee.id)
     
-    if employee_name:
-        query = query.join(Employee).filter(Employee.full_name.ilike(f'%{employee_name}%'))
+    if employee_id:
+        query = query.filter(LeaveRequest.employee_id == employee_id)
     
     if leave_type:
         query = query.filter(LeaveRequest.leave_type == leave_type)
@@ -1089,9 +1091,19 @@ def all_leaves():
         except ValueError:
             pass
     
-    all_requests = query.order_by(LeaveRequest.created_at.desc()).all()
+    if days_requested:
+        try:
+            query = query.filter(LeaveRequest.days_requested == int(days_requested))
+        except ValueError:
+            pass
     
-    return render_template('all_leaves.html', all_requests=all_requests)
+    if reason:
+        query = query.filter(LeaveRequest.reason.ilike(f'%%{reason}%%'))
+    
+    all_requests = query.order_by(LeaveRequest.created_at.desc()).all()
+    employees = Employee.query.all()
+    
+    return render_template('all_leaves.html', all_requests=all_requests, employees=employees)
 
 @app.route('/export_leaves')
 @login_required
@@ -1100,19 +1112,18 @@ def export_leaves():
         flash('You do not have permission to export leaves.', 'danger')
         return redirect(url_for('leaves'))
     
-    employee_name = request.args.get('employee_name', '')
+    employee_id = request.args.get('employee_id', '')
     leave_type = request.args.get('leave_type', '')
     status = request.args.get('status', '')
     start_date_filter = request.args.get('start_date_filter', '')
     end_date_filter = request.args.get('end_date_filter', '')
+    days_requested = request.args.get('days_requested', '')
+    reason = request.args.get('reason', '')
     
-    start_date_str = request.args.get('start_date')
-    end_date_str = request.args.get('end_date')
+    query = LeaveRequest.query.join(Employee, LeaveRequest.employee_id == Employee.id)
     
-    query = LeaveRequest.query
-    
-    if employee_name:
-        query = query.join(Employee).filter(Employee.full_name.ilike(f'%{employee_name}%'))
+    if employee_id:
+        query = query.filter(LeaveRequest.employee_id == employee_id)
     
     if leave_type:
         query = query.filter(LeaveRequest.leave_type == leave_type)
@@ -1134,19 +1145,14 @@ def export_leaves():
         except ValueError:
             pass
     
-    if start_date_str:
+    if days_requested:
         try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            query = query.filter(LeaveRequest.start_date >= start_date)
+            query = query.filter(LeaveRequest.days_requested == int(days_requested))
         except ValueError:
             pass
     
-    if end_date_str:
-        try:
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            query = query.filter(LeaveRequest.end_date <= end_date)
-        except ValueError:
-            pass
+    if reason:
+        query = query.filter(LeaveRequest.reason.ilike(f'%%{reason}%%'))
     
     leaves = query.order_by(LeaveRequest.created_at.desc()).all()
     
@@ -1172,8 +1178,9 @@ def export_leaves():
     
     filename_parts = ['leaves_export']
     
-    if employee_name:
-        filename_parts.append(f'employee_{employee_name}')
+    if employee_id:
+        employee = Employee.query.get(employee_id)
+        filename_parts.append(f'employee_{employee.full_name.replace(" ", "_")}' if employee else 'employee_unknown')
     
     if leave_type:
         filename_parts.append(f'type_{leave_type}')
@@ -1187,13 +1194,19 @@ def export_leaves():
     if end_date_filter:
         filename_parts.append(f'to_{end_date_filter}')
     
+    if days_requested:
+        filename_parts.append(f'days_{days_requested}')
+    
+    if reason:
+        filename_parts.append(f'reason_{reason.replace(" ", "_")}')
+    
     filename = '_'.join(filename_parts) + '.csv'
     
     output.seek(0)
     response = make_response(output.getvalue())
     response.headers['Content-Disposition'] = f'attachment; filename={filename}'
     response.headers['Content-type'] = 'text/csv'
-    
+
     return response
 
 @app.route('/admin_edit_leave/<int:request_id>', methods=['GET', 'POST'])
