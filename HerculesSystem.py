@@ -1,5 +1,5 @@
 import requests
-from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory
+from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, or_
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -607,6 +607,59 @@ def time_tracking():
         address = request.form.get('address')
         ip_address = request.remote_addr
 
+        # Determine status based on IP address
+        status = 'in_office' if is_ip_in_office_network(ip_address) else 'out_of_office'
+
+        # Validate state for clock_out and lunch actions
+        latest_clock_in = TimeTracking.query.filter(
+            TimeTracking.employee_id == current_user.id,
+            TimeTracking.action_type == 'clock_in',
+            func.date(TimeTracking.timestamp) == now.date()
+        ).order_by(TimeTracking.timestamp.desc()).first()
+        latest_lunch_start = TimeTracking.query.filter(
+            TimeTracking.employee_id == current_user.id,
+            TimeTracking.action_type == 'lunch_start',
+            func.date(TimeTracking.timestamp) == now.date()
+        ).order_by(TimeTracking.timestamp.desc()).first()
+        latest_lunch_end = TimeTracking.query.filter(
+            TimeTracking.employee_id == current_user.id,
+            TimeTracking.action_type == 'lunch_end',
+            func.date(TimeTracking.timestamp) == now.date()
+        ).order_by(TimeTracking.timestamp.desc()).first()
+
+        if action_type == 'clock_out':
+            if not latest_clock_in:
+                db.session.rollback()
+                flash('No clock-in record found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+            # Automatically end lunch if lunch_start exists without lunch_end
+            if latest_lunch_start and not latest_lunch_end:
+                lunch_end_entry = TimeTracking(
+                    employee_id=current_user.id,
+                    action_type='lunch_end',
+                    timestamp=now,
+                    latitude=latitude if latitude else None,
+                    longitude=longitude if longitude else None,
+                    address=address if address else 'Unknown',
+                    ip_address=ip_address,
+                    status=status
+                )
+                db.session.add(lunch_end_entry)
+        elif action_type == 'lunch_start':
+            if not latest_clock_in:
+                db.session.rollback()
+                flash('Cannot start lunch: No clock-in found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+            if latest_lunch_start and not latest_lunch_end:
+                db.session.rollback()
+                flash('Cannot start lunch: Lunch already started.', 'danger')
+                return redirect(url_for('dashboard'))
+        elif action_type == 'lunch_end':
+            if not latest_lunch_start:
+                db.session.rollback()
+                flash('No lunch start record found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+
         # Create a new time tracking entry
         time_entry = TimeTracking(
             employee_id=current_user.id,
@@ -616,50 +669,9 @@ def time_tracking():
             longitude=longitude if longitude else None,
             address=address if address else 'Unknown',
             ip_address=ip_address,
-            status='completed' if action_type in ['clock_in', 'clock_out', 'lunch_start', 'lunch_end'] else None
+            status=status
         )
         db.session.add(time_entry)
-
-        # Validate state for clock_out and lunch actions
-        if action_type == 'clock_out':
-            latest_clock_in = TimeTracking.query.filter(
-                TimeTracking.employee_id == current_user.id,
-                TimeTracking.action_type == 'clock_in',
-                func.date(TimeTracking.timestamp) == now.date()
-            ).order_by(TimeTracking.timestamp.desc()).first()
-            if not latest_clock_in:
-                db.session.rollback()
-                flash('No clock-in record found for today.', 'danger')
-                return redirect(url_for('dashboard'))
-        elif action_type == 'lunch_start':
-            latest_clock_in = TimeTracking.query.filter(
-                TimeTracking.employee_id == current_user.id,
-                TimeTracking.action_type == 'clock_in',
-                func.date(TimeTracking.timestamp) == now.date()
-            ).order_by(TimeTracking.timestamp.desc()).first()
-            latest_lunch_start = TimeTracking.query.filter(
-                TimeTracking.employee_id == current_user.id,
-                TimeTracking.action_type == 'lunch_start',
-                func.date(TimeTracking.timestamp) == now.date()
-            ).order_by(TimeTracking.timestamp.desc()).first()
-            if not latest_clock_in or (latest_lunch_start and not TimeTracking.query.filter(
-                TimeTracking.employee_id == current_user.id,
-                TimeTracking.action_type == 'lunch_end',
-                func.date(TimeTracking.timestamp) == now.date()
-            ).first()):
-                db.session.rollback()
-                flash('Cannot start lunch: No clock-in or lunch already started.', 'danger')
-                return redirect(url_for('dashboard'))
-        elif action_type == 'lunch_end':
-            latest_lunch_start = TimeTracking.query.filter(
-                TimeTracking.employee_id == current_user.id,
-                TimeTracking.action_type == 'lunch_start',
-                func.date(TimeTracking.timestamp) == now.date()
-            ).order_by(TimeTracking.timestamp.desc()).first()
-            if not latest_lunch_start:
-                db.session.rollback()
-                flash('No lunch start record found for today.', 'danger')
-                return redirect(url_for('dashboard'))
 
         try:
             db.session.commit()
@@ -704,11 +716,12 @@ def can_perform_time_action(employee, action_type):
     
     return False, 'Invalid action.'
 
-def is_in_office_ip(ip):
-    """Check if IP is within office network range"""
+def is_ip_in_office_network(ip_address):
+    """Check if the IP address is within the office network range."""
     try:
-        network = ipaddress.ip_network(app.config['OFFICE_NETWORK'])
-        return ipaddress.ip_address(ip) in network
+        ip = ipaddress.ip_address(ip_address)
+        office_network = ipaddress.ip_network(app.config['OFFICE_NETWORK'], strict=False)
+        return ip in office_network
     except ValueError:
         return False
 
@@ -1647,79 +1660,95 @@ def export_attendance():
     
     return response
 
-@app.route('/time_reports')
+@app.route('/time_reports', methods=['GET'])
 @login_required
 def time_reports():
-    employees = Employee.query.all() if current_user.user_type == 'admin' else []
-    
-    if current_user.user_type == 'admin':
-        employee_id = request.args.get('employee_id')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        status = request.args.get('status')
-        
-        query = TimeTracking.query.join(Employee)
-        
-        if employee_id:
-            query = query.filter(TimeTracking.employee_id == employee_id)
-        if start_date:
-            query = query.filter(TimeTracking.timestamp >= start_date)
-        if end_date:
-            query = query.filter(TimeTracking.timestamp <= end_date + ' 23:59:59')
-        if status:
-            query = query.filter(TimeTracking.status == status)
-        
-        time_records = query.order_by(TimeTracking.timestamp.desc()).all()
-    else:
-        time_records = TimeTracking.query.filter_by(employee_id=current_user.id).order_by(TimeTracking.timestamp.desc()).all()
-    
-    return render_template('time_reports.html', time_records=time_records, employees=employees)
-
-@app.route('/export_time_reports')
-@login_required
-def export_time_reports():
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to export time reports.', 'danger')
-        return redirect(url_for('time_reports'))
-    
+    now = datetime.now(MYT)
     employee_id = request.args.get('employee_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     status = request.args.get('status')
-    
-    query = TimeTracking.query.join(Employee)
-    
+
+    # Query employees for admin dropdown
+    employees = Employee.query.all() if current_user.user_type == 'admin' else []
+
+    # Base query for time records
+    query = TimeTracking.query
+    if current_user.user_type != 'admin':
+        query = query.filter(TimeTracking.employee_id == current_user.id)
+    else:
+        query = query.join(Employee, TimeTracking.employee_id == Employee.id)
+
+    # Apply filters
     if employee_id:
         query = query.filter(TimeTracking.employee_id == employee_id)
     if start_date:
-        query = query.filter(TimeTracking.timestamp >= start_date)
+        query = query.filter(func.date(TimeTracking.timestamp) >= start_date)
     if end_date:
-        query = query.filter(TimeTracking.timestamp <= end_date + ' 23:59:59')
+        query = query.filter(func.date(TimeTracking.timestamp) <= end_date)
     if status:
         query = query.filter(TimeTracking.status == status)
-    
+
+    # Get records sorted by timestamp (newest first)
     time_records = query.order_by(TimeTracking.timestamp.desc()).all()
-    
+
+    return render_template(
+        'time_reports.html',
+        time_records=time_records,
+        employees=employees,
+        now=now,
+        MYT=MYT
+    )
+
+@app.route('/export_time_reports', methods=['GET'])
+@login_required
+def export_time_reports():
+    if current_user.user_type != 'admin':
+        flash('Access denied: Admins only.', 'danger')
+        return redirect(url_for('time_reports'))
+
+    now = datetime.now(MYT)
+    employee_id = request.args.get('employee_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    status = request.args.get('status')
+
+    # Base query for time records
+    query = TimeTracking.query.join(Employee, TimeTracking.employee_id == Employee.id)
+
+    # Apply filters
+    if employee_id:
+        query = query.filter(TimeTracking.employee_id == employee_id)
+    if start_date:
+        query = query.filter(func.date(TimeTracking.timestamp) >= start_date)
+    if end_date:
+        query = query.filter(func.date(TimeTracking.timestamp) <= end_date)
+    if status:
+        query = query.filter(TimeTracking.status == status)
+
+    time_records = query.order_by(TimeTracking.timestamp.desc()).all()
+
+    # Generate CSV
     output = StringIO()
     writer = csv.writer(output)
-    
-    writer.writerow(['Employee Name', 'Action Type', 'Timestamp', 'Status', 'IP Address'])
-    
+    writer.writerow(['Employee', 'Action', 'Timestamp', 'Status', 'IP Address', 'Address'])
     for record in time_records:
         writer.writerow([
             record.employee.full_name,
             record.action_type.replace('_', ' ').title(),
-            record.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            record.timestamp.astimezone(MYT).strftime('%Y-%m-%d %H:%M:%S'),
             record.status.replace('_', ' ').title() if record.status else 'N/A',
-            record.ip_address or 'N/A'
+            record.ip_address or 'N/A',
+            record.address or 'N/A'
         ])
-    
     output.seek(0)
-    response = make_response(output.getvalue())
-    response.headers['Content-Disposition'] = 'attachment; filename=time_tracking_export.csv'
-    response.headers['Content-type'] = 'text/csv'
-    
-    return response
+
+    return send_file(
+        output,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'time_report_{now.strftime("%Y%m%d_%H%M%S")}.csv'
+    )
 
 @app.route('/settings')
 @login_required

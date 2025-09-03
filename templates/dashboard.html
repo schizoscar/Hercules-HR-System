@@ -10,10 +10,10 @@
     <div class="dashboard-top-row">
         <div class="welcome-section glass">
             <h2>Welcome, {{ current_user.full_name }}!</h2>
-            <p>Today is {{ now.strftime('%A, %B %d, %Y %I:%M %p') }}</p>
-            {% if current_user.last_clock_in and current_user.last_clock_in.date() == now.date() %}
+            <p>Today is {{ now.strftime('%A, %B %d, %Y %I:%M %p') }} MYT</p>
+            {% if latest_clock_in and latest_clock_in.timestamp.date() == now.date() %}
             <p class="clock-in-time">
-                ⏰ Clocked in at: {{ current_user.last_clock_in.strftime('%H:%M') }}
+                ⏰ Clocked in at: {{ latest_clock_in.timestamp.astimezone(MYT).strftime('%H:%M') }} MYT
             </p>
             {% endif %}
         </div>
@@ -29,7 +29,7 @@
                     <input type="hidden" name="longitude" id="longitude">
                     <input type="hidden" name="address" id="address">
             
-                    {% if not current_user.last_clock_in or current_user.last_clock_in.date() != now.date() %}
+                    {% if not latest_clock_in or latest_clock_in.timestamp.date() != now.date() %}
                     <button type="button" data-action="clock_in" class="time-btn btn-primary" id="clockButton">
                         <span class="btn-icon">📅</span>
                         <span class="btn-text">Clock In</span>
@@ -41,12 +41,12 @@
                     </button>
                     {% endif %}
             
-                    {% if current_user.last_clock_in and current_user.last_clock_in.date() == now.date() and (not current_user.last_lunch_start or current_user.last_lunch_start.date() != now.date()) %}
+                    {% if latest_clock_in and latest_clock_in.timestamp.date() == now.date() and (not latest_lunch_start or latest_lunch_start.timestamp.date() != now.date()) %}
                     <button type="button" data-action="lunch_start" class="time-btn btn-warning" id="lunchButton">
                         <span class="btn-icon">🍽️</span>
                         <span class="btn-text">Start Lunch</span>
                     </button>
-                    {% elif current_user.last_lunch_start and current_user.last_lunch_start.date() == now.date() and (not current_user.last_lunch_end or current_user.last_lunch_end.date() != now.date()) %}
+                    {% elif latest_lunch_start and latest_lunch_start.timestamp.date() == now.date() and (not latest_lunch_end or latest_lunch_end.timestamp.date() != now.date()) %}
                     <button type="button" data-action="lunch_end" class="time-btn btn-info" id="lunchButton">
                         <span class="btn-icon">⏱️</span>
                         <span class="btn-text">End Lunch</span>
