@@ -462,11 +462,11 @@
                 {% if current_user.is_authenticated %}
                     <!-- Admin Menu -->
                     {% if current_user.user_type == 'admin' %}
-                        <li><a href="{{ url_for('manage_employees') }}" class="{% if request.endpoint == 'manage_employees' %}active{% endif %}">👥 Manage Employees</a></li>
-                        <li><a href="{{ url_for('add_employee') }}" class="{% if request.endpoint == 'add_employee' %}active{% endif %}">➕ Add Employee</a></li>
-                        <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">📦 Bulk Add Employees</a></li>
-                        <li><a href="{{ url_for('employee_directory') }}" class="{% if request.endpoint == 'employee_directory' %}active{% endif %}">📋 Employee Directory</a></li>
-                        <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">💼 Recruitment</a></li>
+                    <li><a href="{{ url_for('manage_employees') }}" class="{% if request.endpoint == 'manage_employees' %}active{% endif %}">👥 Manage Employees</a></li>
+                    <li><a href="{{ url_for('add_employee') }}" class="{% if request.endpoint == 'add_employee' %}active{% endif %}">➕ Add Employee</a></li>
+                    <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">📦 Bulk Add Employees</a></li>
+                    <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">🏢 Department Directory</a></li>
+                    <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">💼 Recruitment</a></li>
                     {% endif %}
             
                     <!-- Common Menu for All Users -->
@@ -477,7 +477,7 @@
             
                     <!-- Supervisor Additional Access -->
                     {% if current_user.user_type == 'supervisor' %}
-                        <li><a href="{{ url_for('employee_directory') }}" class="{% if request.endpoint == 'employee_directory' %}active{% endif %}">📋 Employee Directory</a></li>
+                            <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">🏢 Department Directory</a></li>
                     {% endif %}
             
                     <li><a href="{{ url_for('logout') }}">🚪 Logout</a></li>

@@ -5,12 +5,56 @@
 {% block header %}Department Directory{% endblock %}
 
 {% block content %}
-<h2>All Departments</h2>
-<ul style="list-style: none; padding: 0; margin-top: 20px;">
-    {% for department in departments %}
-    <li style="padding: 10px; border-bottom: 1px solid #ddd; background: #f9f9f9; margin-bottom: 5px;">
-        {{ department }}
-    </li>
-    {% endfor %}
-</ul>
+<h2>Employees by Nationality</h2>
+
+{% for nationality, employees_list in employees_by_nationality.items() %}
+<div style="margin-bottom: 30px;">
+    <h3 style="background: #f5f5f5; padding: 10px; border-radius: 4px;">{{ nationality }} ({{ employees_list|length }} employees)</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+        <thead>
+            <tr style="background: #e9ecef;">
+                <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Name</th>
+                <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Email</th>
+                <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee ID</th>
+                <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">User Type</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for employee in employees_list %}
+            <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.full_name }}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.email }}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.employee_id }}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.user_type|title }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+
+<!-- Optional: Show all employees in a single table as well -->
+<h2>All Employees</h2>
+<table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+    <thead>
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Name</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Email</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Nationality</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee ID</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">User Type</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for employee in employees %}
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.full_name }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.email }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.nationality }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.employee_id }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.user_type|title }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% endblock %}

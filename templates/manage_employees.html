@@ -35,8 +35,8 @@
                     <tr style="background: rgba(67, 97, 238, 0.1);">
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Name</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Email</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Department</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Position</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Nationality</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Employee ID</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">User Type</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Actions</th>
                     </tr>
@@ -46,8 +46,8 @@
                     <tr>
                         <td style="padding: 12px; border-bottom: 1px solid #eee; color: #333;">{{ employee.full_name }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.email }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.department }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.position }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.nationality }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.employee_id }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <span style="
                                 padding: 4px 8px;
@@ -199,8 +199,8 @@
     
     @media (max-width: 480px) {
         /* Hide less important columns on very small screens */
-        td:nth-child(3), th:nth-child(3), /* Department */
-        td:nth-child(4), th:nth-child(4)  /* Position */
+        td:nth-child(3), th:nth-child(3), /* Nationality */
+        td:nth-child(4), th:nth-child(4)  /* Employee ID */
         {
             display: none;
         }
