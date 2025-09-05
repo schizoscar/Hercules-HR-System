@@ -951,7 +951,7 @@ HR Department
     
     return render_template('add_employee.html', form=form)
 
-@app.route('/download_attachment/<filename>')
+@app.route('/download_attachment/<filename>', endpoint='download_attachment')
 @login_required
 def download_leave_attachment(filename):
     if current_user.user_type not in ['admin', 'supervisor']:
@@ -1057,6 +1057,8 @@ def all_leaves():
     if current_user.user_type not in ['admin', 'supervisor']:
         flash('You do not have permission to view all leaves.', 'danger')
         return redirect(url_for('leaves'))
+
+    print("DEBUG: Entering all_leaves route")  # debugging
     
     employee_id = request.args.get('employee_id', '')
     leave_type = request.args.get('leave_type', '')
@@ -1159,14 +1161,13 @@ def export_leaves():
     output = StringIO()
     writer = csv.writer(output)
     
-    writer.writerow(['Employee Name', 'Leave Type', 'Compassionate Type', 'Start Date', 'End Date', 
+    writer.writerow(['Employee Name', 'Leave Type', 'Start Date', 'End Date', 
                      'Days Requested', 'Status', 'Reason', 'Submitted On', 'Approved/Rejected On'])
     
     for leave in leaves:
         writer.writerow([
             leave.employee.full_name,
             leave.leave_type.title(),
-            leave.compassionate_type.title() if leave.compassionate_type else 'N/A',
             leave.start_date.strftime('%Y-%m-%d'),
             leave.end_date.strftime('%Y-%m-%d'),
             leave.days_requested,
