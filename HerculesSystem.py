@@ -729,21 +729,21 @@ def is_ip_in_office_network(ip_address):
 @app.route('/department_directory')
 @login_required
 def department_directory():
-    #  can modify this to show department-specific information
-    # For now,  keep it showing all employees grouped by some logic
     employees = Employee.query.all()
     
-    # Group employees by some criteria (you can modify this based on your needs)
-    # Since we removed departments, let's group by user_type or nationality
-    employees_by_nationality = {}
+    # Group employees by user_type
+    employees_by_type = {
+        'supervisor': [],
+        'office': [],
+        'factory': []
+    }
+    
     for employee in employees:
-        if employee.nationality not in employees_by_nationality:
-            employees_by_nationality[employee.nationality] = []
-        employees_by_nationality[employee.nationality].append(employee)
+        if employee.user_type in employees_by_type:
+            employees_by_type[employee.user_type].append(employee)
     
     return render_template('department_directory.html', 
-                         employees_by_nationality=employees_by_nationality,
-                         employees=employees)
+                         employees_by_type=employees_by_type)
 
 @app.route('/performance_reviews')
 @login_required
