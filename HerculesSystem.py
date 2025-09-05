@@ -1049,6 +1049,31 @@ HR Department
     
     return render_template('bulk_add_employees.html', form=form)
 
+@app.route('/delete_employee/<int:employee_id>', methods=['POST'])
+@login_required
+def delete_employee(employee_id):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to delete employees.', 'danger')
+        return redirect(url_for('manage_employees'))
+    
+    employee = Employee.query.get_or_404(employee_id)
+    
+    # Prevent deletion of the current user
+    if employee.id == current_user.id:
+        flash('You cannot delete your own account.', 'danger')
+        return redirect(url_for('manage_employees'))
+    
+    # Delete related records first (leave requests, time tracking)
+    LeaveRequest.query.filter_by(employee_id=employee_id).delete()
+    TimeTracking.query.filter_by(employee_id=employee_id).delete()
+    
+    # Delete the employee
+    db.session.delete(employee)
+    db.session.commit()
+    
+    flash(f'Employee {employee.full_name} has been deleted successfully.', 'success')
+    return redirect(url_for('manage_employees'))
+
 @app.route('/download_attachment/<filename>', endpoint='download_attachment')
 @login_required
 def download_leave_attachment(filename):

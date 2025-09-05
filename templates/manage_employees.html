@@ -76,6 +76,15 @@
                                         <span>Reset PW</span>
                                     </button>
                                 </form>
+                                <form action="{{ url_for('delete_employee', employee_id=employee.id) }}" method="POST" style="margin: 0;">
+                                    <button type="submit" 
+                                            class="btn btn-sm btn-danger" 
+                                            style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                            onclick="return confirm('⚠️ WARNING: Are you sure you want to delete {{ employee.full_name }}? This action cannot be undone and will permanently remove all employee data including leave records and time tracking.')">
+                                        <span>🗑️</span>
+                                        <span>Delete</span>
+                                    </button>
+                                </form>
                             </div>
                         </td>
                     </tr>
@@ -136,6 +145,10 @@
     .btn-warning {
         background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);
         color: #333 !important;
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
     }
     
     .btn-sm {

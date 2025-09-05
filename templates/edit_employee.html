@@ -34,11 +34,11 @@
         </div>
         
         <div style="margin-bottom: 15px;">
-            <label for="department" style="display: block; margin-bottom: 5px;">Department</label>
-            {{ form.department(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
-            {% if form.department.errors %}
+            <label for="nationality" style="display: block; margin-bottom: 5px;">Nationality</label>
+            {{ form.nationality(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
+            {% if form.nationality.errors %}
                 <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
-                    {% for error in form.department.errors %}
+                    {% for error in form.nationality.errors %}
                         {{ error }}
                     {% endfor %}
                 </div>
@@ -46,11 +46,11 @@
         </div>
         
         <div style="margin-bottom: 15px;">
-            <label for="position" style="display: block; margin-bottom: 5px;">Position</label>
-            {{ form.position(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
-            {% if form.position.errors %}
+            <label for="employee_id" style="display: block; margin-bottom: 5px;">Employee ID</label>
+            {{ form.employee_id(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
+            {% if form.employee_id.errors %}
                 <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
-                    {% for error in form.position.errors %}
+                    {% for error in form.employee_id.errors %}
                         {{ error }}
                     {% endfor %}
                 </div>
