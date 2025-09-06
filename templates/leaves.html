@@ -8,11 +8,11 @@
 {% if current_user.user_type in ['admin', 'supervisor'] %}
 <!-- Admin/Supervisor View -->
 <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-    <a href="{{ url_for('leaves') }}" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-        Pending Requests
-    </a>
-    <a href="{{ url_for('all_leaves') }}" class="btn" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+    <a href="{{ url_for('all_leaves') }}" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
         All Leaves
+    </a>
+    <a href="{{ url_for('manage_leave_balances') }}" class="btn" style="background: linear-gradient(135deg, #4facfe 0%, #2986cc 100%);">
+        Manage Leaves
     </a>
 </div>
 

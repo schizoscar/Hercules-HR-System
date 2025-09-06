@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Leave Balances{% endblock %}
+
+{% block header %}Manage Leave Balances{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Filter Section with View History Button -->
+    <div class="glass" style="padding: 25px; border-radius: 12px; margin-bottom: 25px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0; color: #333;">Filter Employees</h3>
+            <a href="{{ url_for('leave_balance_history') }}" class="btn" style="background: linear-gradient(135deg, #fa709a 0%, #f1c232 100%);">
+                View History
+            </a>
+        </div>
+        <form method="GET" action="{{ url_for('manage_leave_balances') }}">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Employee Name</label>
+                    <input type="text" name="employee_name" value="{{ request.args.get('employee_name', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="Enter Employee Name">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Employee ID</label>
+                    <input type="text" name="employee_id_search" value="{{ request.args.get('employee_id_search', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="Enter Employee ID">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        Apply Filters
+                    </button>
+                    {% if request.args.get('employee_name') or request.args.get('employee_id_search') %}
+                    <a href="{{ url_for('manage_leave_balances') }}" class="btn" style="background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);">
+                        Clear Filters
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Current Employees Section -->
+    <div class="glass" style="padding: 25px; border-radius: 12px;">
+        <h3 style="margin-bottom: 20px; color: #333;">Employee Leave Balances</h3>
+        
+        {% if employees %}
+        <p style="margin-bottom: 15px; font-style: italic; color: #6c757d;">
+            Showing {{ employees|length }} employee(s)
+        </p>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: rgba(67, 97, 238, 0.1);">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Employee</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Email</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Employee ID</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for employee in employees %}
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #333;">{{ employee.full_name }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.email }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.employee_id }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <a href="{{ url_for('edit_leave_balance', employee_id=employee.id) }}" 
+                               class="btn btn-sm" style="background: linear-gradient(135deg, #4facfe 0%, #2986cc 100%);">
+                                Edit Balances
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="text-align: center; color: #666; padding: 40px;">No employees found.</p>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .dashboard-container {
+        width: 100%;
+        padding: 20px;
+    }
+    
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn {
+        display: inline-block;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: none;
+        cursor: pointer;
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    th {
+        background: rgba(67, 97, 238, 0.1);
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        color: #666;
+    }
+    
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+    
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 10px;
+        }
+        
+        .glass {
+            padding: 15px;
+        }
+        
+        table {
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 8px;
+        }
+        
+        .btn {
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+    }
+</style>
+{% endblock %}

@@ -272,6 +272,34 @@ class LeaveRequestForm(FlaskForm):
     ])
     submit = SubmitField('Confirm')
 
+class LeaveBalance(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    leave_type = db.Column(db.String(20), nullable=False)  # annual, medical, unpaid
+    total_days = db.Column(db.Integer, default=0)
+    used_days = db.Column(db.Integer, default=0)
+    remaining_days = db.Column(db.Integer, default=0)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    employee = db.relationship('Employee', backref=db.backref('leave_balances', lazy=True))
+
+class LeaveBalanceHistory(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    admin_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    leave_type = db.Column(db.String(20), nullable=False)
+    old_total = db.Column(db.Integer, default=0)
+    new_total = db.Column(db.Integer, default=0)
+    old_used = db.Column(db.Integer, default=0)
+    new_used = db.Column(db.Integer, default=0)
+    old_remaining = db.Column(db.Integer, default=0)
+    new_remaining = db.Column(db.Integer, default=0)
+    comment = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    employee = db.relationship('Employee', foreign_keys=[employee_id], backref=db.backref('balance_changes', lazy=True))
+    admin = db.relationship('Employee', foreign_keys=[admin_id])
+
 # Database Migration Functions
 def add_is_admin_column():
     """Add the is_admin and user_type columns to the employee table if they don't exist"""
@@ -306,9 +334,7 @@ def add_is_admin_column():
         
         if 'employee_id' not in columns:
             cursor.execute("ALTER TABLE employee ADD COLUMN employee_id VARCHAR(80)")
-            print("Added employee_id column to employee table")
-        
-        # ... (rest of the function remains the same)
+            print("Added employee_id column to employee table")   
         
         conn.commit()
         conn.close()
@@ -356,6 +382,61 @@ def add_time_tracking_columns():
     except Exception as e:
         print(f"Error checking/adding time tracking columns: {e}")
 
+def add_leave_balance_tables():
+    """Add leave balance and history tables if they don't exist"""
+    try:
+        conn = sqlite3.connect(os.path.join(app.instance_path, 'hr.db'))
+        cursor = conn.cursor()
+        
+        # Check if leave_balance table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='leave_balance'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                CREATE TABLE leave_balance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER NOT NULL,
+                    leave_type VARCHAR(20) NOT NULL,
+                    total_days INTEGER DEFAULT 0,
+                    used_days INTEGER DEFAULT 0,
+                    remaining_days INTEGER DEFAULT 0,
+                    updated_at DATETIME,
+                    FOREIGN KEY (employee_id) REFERENCES employee (id)
+                )
+            """)
+            print("Created leave_balance table")
+        
+        # Check if leave_balance_history table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='leave_balance_history'")
+        if not cursor.fetchone():
+            cursor.execute("""
+                CREATE TABLE leave_balance_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER NOT NULL,
+                    admin_id INTEGER NOT NULL,
+                    leave_type VARCHAR(20) NOT NULL,
+                    old_total INTEGER DEFAULT 0,
+                    new_total INTEGER DEFAULT 0,
+                    old_used INTEGER DEFAULT 0,
+                    new_used INTEGER DEFAULT 0,
+                    old_remaining INTEGER DEFAULT 0,
+                    new_remaining INTEGER DEFAULT 0,
+                    comment TEXT,
+                    created_at DATETIME,
+                    FOREIGN KEY (employee_id) REFERENCES employee (id),
+                    FOREIGN KEY (admin_id) REFERENCES employee (id)
+                )
+            """)
+            print("Created leave_balance_history table")
+        
+        conn.commit()
+        conn.close()
+        
+        # Create initial leave balances
+        create_initial_leave_balances()
+        
+    except Exception as e:
+        print(f"Error creating leave balance tables: {e}")
+
 # Routes and Logic
 @login_manager.user_loader
 def load_user(user_id):
@@ -372,6 +453,7 @@ with app.app_context():
     print("Database tables created!")
     add_is_admin_column()
     add_time_tracking_columns()
+    add_leave_balance_tables()
 
 @app.before_request
 def before_request():
@@ -1529,6 +1611,155 @@ HR Department
         flash(f'Password reset successfully. New password: {temp_password}. Failed to send email.', 'warning')
     
     return redirect(url_for('manage_employees'))
+
+@app.route('/manage_leave_balances')
+@login_required
+def manage_leave_balances():
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to manage leave balances.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Get query parameters for filtering
+    employee_name = request.args.get('employee_name', '').strip()
+    employee_id_search = request.args.get('employee_id_search', '').strip()
+
+    # Start with base query
+    query = Employee.query
+
+    # Apply filters
+    if employee_name:
+        query = query.filter(Employee.full_name.ilike(f'%{employee_name}%'))
+    if employee_id_search:
+        query = query.filter(Employee.employee_id.ilike(f'%{employee_id_search}%'))
+
+    # Execute query to get filtered employees
+    employees = query.all()
+
+    return render_template('manage_leave_balances.html', employees=employees)
+
+@app.route('/edit_leave_balance/<int:employee_id>', methods=['GET', 'POST'])
+@login_required
+def edit_leave_balance(employee_id):
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to edit leave balances.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    employee = Employee.query.get_or_404(employee_id)
+    
+    # Get or create leave balances
+    leave_balances = {}
+    for leave_type in ['annual', 'medical', 'unpaid']:
+        balance = LeaveBalance.query.filter_by(employee_id=employee_id, leave_type=leave_type).first()
+        if not balance:
+            balance = LeaveBalance(employee_id=employee_id, leave_type=leave_type, total_days=0, used_days=0, remaining_days=0)
+            db.session.add(balance)
+        leave_balances[leave_type] = balance
+    
+    if request.method == 'POST':
+        try:
+            comment = request.form.get('comment', '').strip()
+            
+            for leave_type in ['annual', 'medical', 'unpaid']:
+                balance = leave_balances[leave_type]
+                
+                # Get old values for history
+                old_total = balance.total_days
+                old_used = balance.used_days
+                old_remaining = balance.remaining_days
+                
+                # Update with new values
+                balance.total_days = int(request.form.get(f'{leave_type}_total', 0))
+                balance.used_days = int(request.form.get(f'{leave_type}_used', 0))
+                balance.remaining_days = int(request.form.get(f'{leave_type}_remaining', 0))
+                balance.updated_at = datetime.utcnow()
+                
+                # Create history record if values changed
+                if (old_total != balance.total_days or old_used != balance.used_days or 
+                    old_remaining != balance.remaining_days):
+                    history = LeaveBalanceHistory(
+                        employee_id=employee_id,
+                        admin_id=current_user.id,
+                        leave_type=leave_type,
+                        old_total=old_total,
+                        new_total=balance.total_days,
+                        old_used=old_used,
+                        new_used=balance.used_days,
+                        old_remaining=old_remaining,
+                        new_remaining=balance.remaining_days,
+                        comment=comment if leave_type == 'annual' else ''  # Only save comment once
+                    )
+                    db.session.add(history)
+            
+            db.session.commit()
+            flash(f'Leave balances updated successfully for {employee.full_name}.', 'success')
+            return redirect(url_for('manage_leave_balances'))
+            
+        except ValueError:
+            db.session.rollback()
+            flash('Invalid input. Please enter numeric values.', 'danger')
+    
+    return render_template('edit_leave_balance.html', employee=employee, leave_balances=leave_balances)
+
+# Add this function to create initial leave balances
+def create_initial_leave_balances():
+    employees = Employee.query.all()
+    for employee in employees:
+        for leave_type in ['annual', 'medical', 'unpaid']:
+            if not LeaveBalance.query.filter_by(employee_id=employee.id, leave_type=leave_type).first():    # doesnt override current emp's balances
+                balance = LeaveBalance(
+                    employee_id=employee.id,
+                    leave_type=leave_type,
+                    total_days=20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0),    # 20 days of annual by default, 14 days of medical
+                    used_days=0,
+                    remaining_days=20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+                )
+                db.session.add(balance)
+    db.session.commit()
+
+@app.route('/leave_balance_history')
+@login_required
+def leave_balance_history():
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to view leave balance history.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Get filter parameters
+    employee_id = request.args.get('employee_id', '')
+    admin_id = request.args.get('admin_id', '')
+    leave_type = request.args.get('leave_type', '')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # Build query
+    query = LeaveBalanceHistory.query
+    
+    if employee_id:
+        query = query.filter(LeaveBalanceHistory.employee_id == employee_id)
+    if admin_id:
+        query = query.filter(LeaveBalanceHistory.admin_id == admin_id)
+    if leave_type:
+        query = query.filter(LeaveBalanceHistory.leave_type == leave_type)
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+            query = query.filter(LeaveBalanceHistory.created_at >= start_date_obj)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+            query = query.filter(LeaveBalanceHistory.created_at <= end_date_obj)
+        except ValueError:
+            pass
+    
+    history_records = query.order_by(LeaveBalanceHistory.created_at.desc()).all()
+    employees = Employee.query.all()
+    admins = Employee.query.filter(Employee.user_type.in_(['admin', 'supervisor'])).all()
+    
+    return render_template('leave_balance_history.html', 
+                         history_records=history_records,
+                         employees=employees,
+                         admins=admins)
 
 @app.route('/test_email')
 @login_required

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Leave Balance History{% endblock %}
+
+{% block header %}Leave Balance Change History{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Filter Section -->
+    <div class="glass" style="padding: 25px; border-radius: 12px; margin-bottom: 25px;">
+        <h3 style="margin-bottom: 15px;">Filter History</h3>
+        <form method="GET" action="{{ url_for('leave_balance_history') }}">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Employee</label>
+                    <select name="employee_id" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                        <option value="">All Employees</option>
+                        {% for employee in employees %}
+                        <option value="{{ employee.id }}" {% if request.args.get('employee_id') == employee.id|string %}selected{% endif %}>{{ employee.full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Changed By</label>
+                    <select name="admin_id" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                        <option value="">All Admins</option>
+                        {% for admin in admins %}
+                        <option value="{{ admin.id }}" {% if request.args.get('admin_id') == admin.id|string %}selected{% endif %}>{{ admin.full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Leave Type</label>
+                    <select name="leave_type" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                        <option value="">All Types</option>
+                        <option value="annual" {% if request.args.get('leave_type') == 'annual' %}selected{% endif %}>Annual</option>
+                        <option value="medical" {% if request.args.get('leave_type') == 'medical' %}selected{% endif %}>Medical</option>
+                        <option value="unpaid" {% if request.args.get('leave_type') == 'unpaid' %}selected{% endif %}>Unpaid</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Start Date</label>
+                    <input type="date" name="start_date" value="{{ request.args.get('start_date', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">End Date</label>
+                    <input type="date" name="end_date" value="{{ request.args.get('end_date', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                        Apply Filters
+                    </button>
+                    {% if request.args.get('employee_id') or request.args.get('admin_id') or request.args.get('leave_type') or request.args.get('start_date') or request.args.get('end_date') %}
+                    <a href="{{ url_for('leave_balance_history') }}" class="btn" style="background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);">
+                        Clear Filters
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- History Records -->
+    <div class="glass" style="padding: 25px; border-radius: 12px;">
+        <h3 style="margin-bottom: 20px;">Change History</h3>
+        
+        {% if history_records %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: rgba(67, 97, 238, 0.1);">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Date</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Employee</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Leave Type</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Changes</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Changed By</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Comment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in history_records %}
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #333;">{{ record.employee.full_name }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <span style="
+                                padding: 4px 8px;
+                                border-radius: 12px;
+                                font-size: 0.8rem;
+                                font-weight: 500;
+                                background: rgba(67, 97, 238, 0.1);
+                                color: #4361ee;
+                                text-transform: capitalize;
+                            ">
+                                {{ record.leave_type }}
+                            </span>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <div style="font-size: 0.9rem;">
+                                <div>Total: {{ record.old_total }} → {{ record.new_total }}</div>
+                                <div>Used: {{ record.old_used }} → {{ record.new_used }}</div>
+                                <div>Remaining: {{ record.old_remaining }} → {{ record.new_remaining }}</div>
+                            </div>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ record.admin.full_name }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666; max-width: 200px;">{{ record.comment or 'No comment' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="text-align: center; color: #666; padding: 40px;">No history records found.</p>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .dashboard-container {
+        width: 100%;
+        padding: 20px;
+    }
+    
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn {
+        display: inline-block;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: none;
+        cursor: pointer;
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    th {
+        background: rgba(67, 97, 238, 0.1);
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        color: #666;
+    }
+    
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+</style>
+{% endblock %}
