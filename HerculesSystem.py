@@ -941,6 +941,48 @@ def request_leave():
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1
         
+        # Check if end date is before start date
+        if form.end_date.data < form.start_date.data:
+            flash('End date cannot be before start date.', 'danger')
+            return render_template('request_leave.html', form=form)
+        
+        # Check for overlapping leave requests (approved or pending)
+        overlapping_leaves = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == current_user.id,
+            LeaveRequest.status.in_(['approved', 'pending']),
+            LeaveRequest.id != (request.args.get('request_id') if request.args.get('request_id') else None),  # Exclude current request when editing
+            db.or_(
+                # New leave starts during existing leave
+                db.and_(
+                    form.start_date.data >= LeaveRequest.start_date,
+                    form.start_date.data <= LeaveRequest.end_date
+                ),
+                # New leave ends during existing leave
+                db.and_(
+                    form.end_date.data >= LeaveRequest.start_date,
+                    form.end_date.data <= LeaveRequest.end_date
+                ),
+                # New leave completely contains existing leave
+                db.and_(
+                    form.start_date.data <= LeaveRequest.start_date,
+                    form.end_date.data >= LeaveRequest.end_date
+                )
+            )
+        ).all()
+        
+        if overlapping_leaves:
+            overlap_messages = []
+            for overlap in overlapping_leaves:
+                status_display = overlap.status.title()
+                overlap_messages.append(
+                    f"{status_display} leave from {overlap.start_date.strftime('%Y-%m-%d')} to "
+                    f"{overlap.end_date.strftime('%Y-%m-%d')} ({overlap.leave_type.title()})"
+                    f"{': ' + overlap.reason if overlap.reason else ''}"
+                )
+            
+            flash('Your leave request overlaps with existing leave(s): ' + ', '.join(overlap_messages), 'danger')
+            return render_template('request_leave.html', form=form)
+      
         is_valid, error_message = validate_leave_days(form.leave_type.data, days_requested)
         
         if not is_valid:
