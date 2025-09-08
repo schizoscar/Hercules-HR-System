@@ -108,8 +108,8 @@ Your leave request has been {status}.
 
 Details:
 - Type: {leave_request.leave_type.title()}
-- From: {leave_request.start_date.strftime('%Y-%m-%d')}
-- To: {leave_request.end_date.strftime('%Y-%m-%d')}
+- From: {leave_request.start_date.strftime('%d-%m-%y')}
+- To: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
 - Reason: {leave_request.reason}
 
@@ -133,8 +133,8 @@ A leave request has been submitted by your team member {leave_request.employee.f
 
 Details:
 - Leave Type: {leave_request.leave_type.title()}
-- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
-- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Start Date: {leave_request.start_date.strftime('%d-%m-%y')}
+- End Date: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
 - Reason: {leave_request.reason}
 
@@ -258,8 +258,8 @@ class LeaveRequest(db.Model):
     employee = db.relationship('Employee', backref=db.backref('leave_requests', lazy=True))
 
 class LeaveRequestForm(FlaskForm):
-    start_date = DateField('Start Date', format='%Y-%m-%d', validators=[DataRequired()])
-    end_date = DateField('End Date', format='%Y-%m-%d', validators=[DataRequired()])
+    start_date = DateField('Start Date', format='%d-%m-%y', validators=[DataRequired()])
+    end_date = DateField('End Date', format='%d-%m-%y', validators=[DataRequired()])
     leave_type = SelectField('Leave Type', choices=[
         ('annual', 'Annual Leave'),
         ('medical', 'Medical Leave'),
@@ -408,13 +408,13 @@ def leave_balance_history():
         query = query.filter(LeaveBalanceHistory.leave_type == leave_type)
     if start_date:
         try:
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+            start_date_obj = datetime.strptime(start_date, '%d-%m-%y')
             query = query.filter(LeaveBalanceHistory.created_at >= start_date_obj)
         except ValueError:
             pass
     if end_date:
         try:
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+            end_date_obj = datetime.strptime(end_date, '%d-%m-%y')
             query = query.filter(LeaveBalanceHistory.created_at <= end_date_obj)
         except ValueError:
             pass
@@ -583,7 +583,7 @@ A new leave request has been submitted.
 
 Employee: {leave_request.employee.full_name}
 Leave Type: {leave_request.leave_type.title()}
-Dates: {leave_request.start_date.strftime('%Y-%m-%d')} to {leave_request.end_date.strftime('%Y-%m-%d')}
+Dates: {leave_request.start_date.strftime('%d-%m-%y')} to {leave_request.end_date.strftime('%d-%m-%y')}
 Days: {leave_request.days_requested}
 Reason: {leave_request.reason}
 
@@ -975,8 +975,8 @@ def request_leave():
             for overlap in overlapping_leaves:
                 status_display = overlap.status.title()
                 overlap_messages.append(
-                    f"{status_display} leave from {overlap.start_date.strftime('%Y-%m-%d')} to "
-                    f"{overlap.end_date.strftime('%Y-%m-%d')} ({overlap.leave_type.title()})"
+                    f"{status_display} leave from {overlap.start_date.strftime('%d-%m-%y')} to "
+                    f"{overlap.end_date.strftime('%d-%m-%y')} ({overlap.leave_type.title()})"
                     f"{': ' + overlap.reason if overlap.reason else ''}"
                 )
             
@@ -1105,8 +1105,8 @@ Your leave request has been approved by {current_user.full_name}.
 
 Details:
 - Leave Type: {leave_request.leave_type.title()}
-- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
-- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Start Date: {leave_request.start_date.strftime('%d-%m-%y')}
+- End Date: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
 - Reason: {leave_request.reason}
 
@@ -1143,8 +1143,8 @@ Your leave request has been rejected by {current_user.full_name}.
 
 Details:
 - Leave Type: {leave_request.leave_type.title()}
-- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
-- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Start Date: {leave_request.start_date.strftime('%d-%m-%y')}
+- End Date: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
 - Reason: {leave_request.reason}
 
@@ -1431,14 +1431,14 @@ def all_leaves():
     
     if start_date_filter:
         try:
-            start_date = datetime.strptime(start_date_filter, '%Y-%m-%d').date()
+            start_date = datetime.strptime(start_date_filter, '%d-%m-%y').date()
             query = query.filter(LeaveRequest.start_date >= start_date)
         except ValueError:
             pass
     
     if end_date_filter:
         try:
-            end_date = datetime.strptime(end_date_filter, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_filter, '%d-%m-%y').date()
             query = query.filter(LeaveRequest.start_date <= end_date)
         except ValueError:
             pass
@@ -1485,14 +1485,14 @@ def export_leaves():
     
     if start_date_filter:
         try:
-            start_date = datetime.strptime(start_date_filter, '%Y-%m-%d').date()
+            start_date = datetime.strptime(start_date_filter, '%d-%m-%y').date()
             query = query.filter(LeaveRequest.start_date >= start_date)
         except ValueError:
             pass
     
     if end_date_filter:
         try:
-            end_date = datetime.strptime(end_date_filter, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_filter, '%d-%m-%y').date()
             query = query.filter(LeaveRequest.start_date <= end_date)
         except ValueError:
             pass
@@ -1518,13 +1518,13 @@ def export_leaves():
         writer.writerow([
             leave.employee.full_name,
             leave.leave_type.title(),
-            leave.start_date.strftime('%Y-%m-%d'),
-            leave.end_date.strftime('%Y-%m-%d'),
+            leave.start_date.strftime('%d-%m-%y'),
+            leave.end_date.strftime('%d-%m-%y'),
             leave.days_requested,
             leave.status.title(),
             leave.reason,
-            leave.created_at.strftime('%Y-%m-%d %H:%M'),
-            leave.approved_at.strftime('%Y-%m-%d %H:%M') if leave.approved_at else 'N/A'
+            leave.created_at.strftime('%d-%m-%dy%H:%M'),
+            leave.approved_at.strftime('%d-%m-%y %H:%M') if leave.approved_at else 'N/A'
         ])
     
     filename_parts = ['leaves_export']
@@ -1659,8 +1659,8 @@ Your previously approved leave request has been rejected by an administrator.
 
 Details:
 - Leave Type: {leave_request.leave_type.title()}
-- Start Date: {leave_request.start_date.strftime('%Y-%m-%d')}
-- End Date: {leave_request.end_date.strftime('%Y-%m-%d')}
+- Start Date: {leave_request.start_date.strftime('%d-%m-%y')}
+- End Date: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
 - Reason: {leave_request.reason}
 
@@ -1916,13 +1916,13 @@ def leave_balance_history():
         query = query.filter(LeaveBalanceHistory.leave_type == leave_type)
     if start_date:
         try:
-            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+            start_date_obj = datetime.strptime(start_date, '%d-%m-%y')
             query = query.filter(LeaveBalanceHistory.created_at >= start_date_obj)
         except ValueError:
             pass
     if end_date:
         try:
-            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+            end_date_obj = datetime.strptime(end_date, '%d-%m-%y')
             query = query.filter(LeaveBalanceHistory.created_at <= end_date_obj)
         except ValueError:
             pass
@@ -1976,8 +1976,8 @@ def reports():
     status_filter = request.args.get('status')
     
     # Convert date strings to date objects
-    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
-    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
+    start_date = datetime.strptime(start_date_str, '%d-%m-%y').date() if start_date_str else None
+    end_date = datetime.strptime(end_date_str, '%d-%m-%y').date() if end_date_str else None
     
     # Default to current month if no dates provided
     if not start_date and not end_date:
@@ -1987,6 +1987,9 @@ def reports():
     
     # Build query to get attendance data
     attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter)
+    
+    # Sort attendance records by date descending (newest first)
+    attendance_data.sort(key=lambda x: x['date'], reverse=True)
     
     return render_template('reports.html', 
                          employees=employees,
@@ -2105,8 +2108,8 @@ def export_attendance():
     status_filter = request.args.get('status')
     
     # Convert date strings to date objects
-    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else None
-    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else None
+    start_date = datetime.strptime(start_date_str, '%d-%m-%y').date() if start_date_str else None
+    end_date = datetime.strptime(end_date_str, '%d-%m-%y').date() if end_date_str else None
     
     # Get attendance data
     attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter)
@@ -2122,7 +2125,7 @@ def export_attendance():
     for record in attendance_data:
         writer.writerow([
             record['employee'].full_name,
-            record['date'].strftime('%Y-%m-%d'),
+            record['date'].strftime('%d-%m-%y'),
             record['status'].title(),
             record['clock_in'].strftime('%H:%M') if record['clock_in'] else 'N/A',
             record['clock_out'].strftime('%H:%M') if record['clock_out'] else 'N/A',
@@ -2231,7 +2234,7 @@ def export_time_reports():
         writer.writerow([
             record.employee.full_name,
             record.action_type.replace('_', ' ').title(),
-            record.timestamp.astimezone(MYT).strftime('%Y-%m-%d %H:%M:%S'),
+            record.timestamp.astimezone(MYT).strftime('%d-%m-%y %H:%M:%S'),
             record.status.replace('_', ' ').title() if record.status else 'N/A',
             record.ip_address or 'N/A',
             record.address or 'N/A'

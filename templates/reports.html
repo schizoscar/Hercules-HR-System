@@ -73,7 +73,7 @@
                     {% for record in attendance_records %}
                     <tr>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.employee.full_name }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.date.strftime('%Y-%m-%d') }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.date.strftime('%d-%m-%y') }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <span style="
                                 padding: 4px 8px;

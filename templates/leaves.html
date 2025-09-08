@@ -163,8 +163,8 @@
         {% for request in user_requests %}
         <tr>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.leave_type|title }}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%Y-%m-%d') }}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%Y-%m-%d') }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%d-%m-%y') }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%d-%m-%y') }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.days_requested }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">
                 <span style="
