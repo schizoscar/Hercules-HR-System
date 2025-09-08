@@ -1728,7 +1728,9 @@ Dear {employee.full_name},
 
 Your password has been reset by the administrator.
 
-Your new temporary password is: {temp_password}
+Your login details:
+Username: {employee.username}
+Password: {temp_password}
 
 Please change your password after logging in.
 
