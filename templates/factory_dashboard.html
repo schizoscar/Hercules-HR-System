@@ -5,7 +5,7 @@
 {% block header %}Factory Dashboard{% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
+<div class="dashboard-container factory-dashboard">
     <!-- Welcome Section with Time Tracking - HORIZONTAL LAYOUT -->
     <div class="dashboard-top-row">
         <div class="welcome-section glass">
@@ -65,11 +65,9 @@
     </div>
 
     <!-- Factory-specific content -->
-    <div class="glass">
-        <h3>Factory Worker Dashboard</h3>
-        <p>This is your specialized factory worker dashboard. You can manage your leave requests and track your time here.</p>
-        
-        <div class="quick-access-header">
+    <div class="glass" style="padding: 25px; border-radius: 12px; margin-bottom: 30px;">
+        <h3 style="margin-bottom: 20px; color: #333;">Quick Access</h3> 
+        <div class="quick-access-buttons" style="display: flex; gap: 15px; flex-wrap: wrap;">
             <a href="{{ url_for('leaves') }}" class="btn btn-primary">
                 <span>🌴</span>
                 <span>Manage Leaves</span>
@@ -264,7 +262,12 @@
 </script>
 
 <style>
-    /* Dashboard Layout Styles */
+    /* Add this rule to target the header in your dashboard */
+    .header {
+        margin-top: 60px !important;
+    }
+    
+    /* Your existing styles below */
     .dashboard-top-row {
         display: flex;
         justify-content: space-between;
@@ -375,28 +378,15 @@
         box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
     }
     
-    .quick-access-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    
-    .quick-access-header h3 {
-        color: #333;
-        margin: 0;
-    }
-    
     .btn {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 10px 20px;
+        padding: 12px 20px;
         border-radius: 8px;
         text-decoration: none;
         font-weight: 600;
         transition: all 0.3s ease;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
@@ -412,26 +402,65 @@
     
     /* Responsive design */
     @media (max-width: 768px) {
+        .dashboard-container {
+            width: 100%;
+            padding: 0 15px 20px 15px;
+            margin-left: 0;
+            margin-right: 0;
+        }
+    
         .dashboard-top-row {
             flex-direction: column;
+            width: 100%;
+            margin-left: 0;
+            margin-right: 0;
         }
-        
+    
         .welcome-section,
-        .time-tracking-section {
-            min-width: 100%;
+        .time-tracking-section,
+        .glass {
+            width: 100%;
+            margin-left: 0;
+            margin-right: 0;
+            box-sizing: border-box;
         }
-        
-        .quick-access-header {
+    
+        .quick-access-buttons {
             flex-direction: column;
-            align-items: flex-start;
-            gap: 15px;
+            gap: 10px;
+            width: 100%;
         }
-        
+    
         .button-container {
             flex-direction: column;
             gap: 8px;
+            width: 100%;
+        }
+    
+        .time-btn {
+            width: 100%;
+        }
+    
+        /* Ensure all content spans full width */
+        table, thead, tbody, th, td, tr {
+            width: 100% !important;
+            max-width: 100% !important;
         }
     }
-</style>
 
+    /* Additional fix for the main content area */
+    @media (max-width: 768px) {
+        .main-content {
+            padding-left: 15px !important;
+            padding-right: 15px !important;
+            margin-left: 0 !important;
+        }
+    
+        .main-content.shifted {
+            margin-left: 0 !important;
+            padding-left: 15px !important;
+        }
+    }
+
+</style>
 {% endblock %}

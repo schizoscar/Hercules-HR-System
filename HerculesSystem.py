@@ -699,21 +699,34 @@ def time_tracking():
             TimeTracking.action_type == 'clock_in',
             func.date(TimeTracking.timestamp) == now.date()
         ).order_by(TimeTracking.timestamp.desc()).first()
+        
+        latest_clock_out = TimeTracking.query.filter(
+            TimeTracking.employee_id == current_user.id,
+            TimeTracking.action_type == 'clock_out',
+            func.date(TimeTracking.timestamp) == now.date()
+        ).order_by(TimeTracking.timestamp.desc()).first()
+        
         latest_lunch_start = TimeTracking.query.filter(
             TimeTracking.employee_id == current_user.id,
             TimeTracking.action_type == 'lunch_start',
             func.date(TimeTracking.timestamp) == now.date()
         ).order_by(TimeTracking.timestamp.desc()).first()
+        
         latest_lunch_end = TimeTracking.query.filter(
             TimeTracking.employee_id == current_user.id,
             TimeTracking.action_type == 'lunch_end',
             func.date(TimeTracking.timestamp) == now.date()
         ).order_by(TimeTracking.timestamp.desc()).first()
 
+        # VALIDATION: Prevent multiple clock-outs in the same day
         if action_type == 'clock_out':
             if not latest_clock_in:
                 db.session.rollback()
                 flash('No clock-in record found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+            if latest_clock_out:
+                db.session.rollback()
+                flash('You have already clocked out today.', 'danger')
                 return redirect(url_for('dashboard'))
             # Automatically end lunch if lunch_start exists without lunch_end
             if latest_lunch_start and not latest_lunch_end:
@@ -728,6 +741,13 @@ def time_tracking():
                     status=status
                 )
                 db.session.add(lunch_end_entry)
+                
+        elif action_type == 'clock_in':
+            if latest_clock_in and latest_clock_in.timestamp.date() == now.date():
+                db.session.rollback()
+                flash('You have already clocked in today.', 'danger')
+                return redirect(url_for('dashboard'))
+                
         elif action_type == 'lunch_start':
             if not latest_clock_in:
                 db.session.rollback()
@@ -737,10 +757,19 @@ def time_tracking():
                 db.session.rollback()
                 flash('Cannot start lunch: Lunch already started.', 'danger')
                 return redirect(url_for('dashboard'))
+            if latest_lunch_start and latest_lunch_end:
+                db.session.rollback()
+                flash('Cannot start lunch: Lunch already completed for today.', 'danger')
+                return redirect(url_for('dashboard'))
+                
         elif action_type == 'lunch_end':
             if not latest_lunch_start:
                 db.session.rollback()
                 flash('No lunch start record found for today.', 'danger')
+                return redirect(url_for('dashboard'))
+            if latest_lunch_end:
+                db.session.rollback()
+                flash('You have already ended lunch today.', 'danger')
                 return redirect(url_for('dashboard'))
 
         # Create a new time tracking entry
