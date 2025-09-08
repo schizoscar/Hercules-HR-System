@@ -38,8 +38,8 @@
         <tr>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.employee.full_name }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.leave_type|title }}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%Y-%m-%d') }}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%Y-%m-%d') }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.start_date.strftime('%d-%m-%y') }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.end_date.strftime('%d-%m-%y') }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.days_requested }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ request.reason }}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">
@@ -77,7 +77,7 @@
             <strong>Leave Type:</strong> {{ request.leave_type|title }}
         </div>
         <div style="margin-bottom: 10px;">
-            <strong>Dates:</strong> {{ request.start_date.strftime('%Y-%m-%d') }} to {{ request.end_date.strftime('%Y-%m-%d') }}
+            <strong>Dates:</strong> {{ request.start_date.strftime('%d-%m-%y') }} to {{ request.end_date.strftime('%d-%m-%y') }}
         </div>
         <div style="margin-bottom: 10px;">
             <strong>Days:</strong> {{ request.days_requested }}

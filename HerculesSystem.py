@@ -695,43 +695,65 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # Create the form
     form = TimeTrackingForm()
-    now = datetime.now(MYT)  # Set current time to MYT
-    # Get latest clock-in and lunch records for the current day
-    latest_clock_in = TimeTracking.query.filter(
+    
+    # Get today's attendance status for the current user
+    today = datetime.now().date()
+    today_attendance = TimeTracking.query.filter(
         TimeTracking.employee_id == current_user.id,
-        TimeTracking.action_type == 'clock_in',
-        func.date(TimeTracking.timestamp) == now.date()
-    ).order_by(TimeTracking.timestamp.desc()).first()
-    latest_lunch_start = TimeTracking.query.filter(
-        TimeTracking.employee_id == current_user.id,
-        TimeTracking.action_type == 'lunch_start',
-        func.date(TimeTracking.timestamp) == now.date()
-    ).order_by(TimeTracking.timestamp.desc()).first()
-    latest_lunch_end = TimeTracking.query.filter(
-        TimeTracking.employee_id == current_user.id,
-        TimeTracking.action_type == 'lunch_end',
-        func.date(TimeTracking.timestamp) == now.date()
-    ).order_by(TimeTracking.timestamp.desc()).first()
-    if current_user.user_type == 'factory':
-        return render_template(
-            'factory_dashboard.html',
-            form=form,
-            now=now,
-            MYT=MYT,
-            latest_clock_in=latest_clock_in,
-            latest_lunch_start=latest_lunch_start,
-            latest_lunch_end=latest_lunch_end
-        )
-    return render_template(
-        'dashboard.html',
-        form=form,
-        now=now,
-        MYT=MYT,
-        latest_clock_in=latest_clock_in,
-        latest_lunch_start=latest_lunch_start,
-        latest_lunch_end=latest_lunch_end
-    )
+        db.func.date(TimeTracking.timestamp) == today
+    ).order_by(TimeTracking.timestamp).all()
+    
+    # Determine today's status
+    today_status = "Not Clocked In"
+    clock_in_time = None
+    clock_out_time = None
+    
+    for record in today_attendance:
+        if record.action_type == 'clock_in':
+            clock_in_time = record.timestamp
+            today_status = "Clocked In"
+        elif record.action_type == 'clock_out':
+            clock_out_time = record.timestamp
+            today_status = "Clocked Out"
+    
+    # Get leave statistics for the dashboard
+    remaining_leave = 0
+    pending_requests = 0
+    approved_leaves = 0
+    
+    # Get remaining annual leave days
+    annual_balance = LeaveBalance.query.filter_by(
+        employee_id=current_user.id,
+        leave_type='annual'
+    ).first()
+    
+    if annual_balance:
+        remaining_leave = annual_balance.remaining_days
+    
+    # Get pending leave requests count
+    pending_requests = LeaveRequest.query.filter_by(
+        employee_id=current_user.id,
+        status='pending'
+    ).count()
+    
+    # Get approved leave requests count (this year)
+    current_year = datetime.now().year
+    approved_leaves = LeaveRequest.query.filter(
+        LeaveRequest.employee_id == current_user.id,
+        LeaveRequest.status == 'approved',
+        db.extract('year', LeaveRequest.start_date) == current_year
+    ).count()
+    
+    return render_template('dashboard.html',
+                         form=form,  # Pass the form to template
+                         today_status=today_status,
+                         clock_in_time=clock_in_time,
+                         clock_out_time=clock_out_time,
+                         remaining_leave=remaining_leave,
+                         pending_requests=pending_requests,
+                         approved_leaves=approved_leaves)
 
 @app.route('/log_error', methods=['POST'])
 def log_error():

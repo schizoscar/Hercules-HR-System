@@ -91,7 +91,7 @@
                                 {{ record.action_type.replace('_', ' ').title() }}
                             </span>
                         </td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.timestamp.strftime('%d-%m-%y %H:%M:%S') }}</td>
                         {% if current_user.user_type == 'admin' %}
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <span style="
