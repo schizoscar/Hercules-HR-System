@@ -47,19 +47,6 @@
             {% endif %}
         </div>
         
-        <!-- Compassionate Type Field (initially hidden) -->
-        <div id="compassionate_type_container" style="margin-bottom: 15px; display: none;">
-            <label for="compassionate_type" style="display: block; margin-bottom: 5px;">Compassionate Leave Type</label>
-            {{ form.compassionate_type(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;") }}
-            {% if form.compassionate_type.errors %}
-                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
-                    {% for error in form.compassionate_type.errors %}
-                        {{ error }}
-                    {% endfor %}
-                </div>
-            {% endif %}
-        </div>
-        
         <div style="margin-bottom: 15px;">
             <label for="reason" style="display: block; margin-bottom: 5px;">Reason</label>
             {{ form.reason(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-height: 100px;", placeholder="Please provide a reason for your leave request") }}
@@ -108,24 +95,6 @@
         document.getElementById('start_date').addEventListener('change', function () {
             document.getElementById('end_date').setAttribute('min', this.value);
         });
-
-        // Show/hide compassionate type based on leave type selection
-        const leaveTypeSelect = document.getElementById('leave_type_select');
-        const compassionateContainer = document.getElementById('compassionate_type_container');
-
-        function toggleCompassionateField() {
-            if (leaveTypeSelect.value === 'compassionate') {
-                compassionateContainer.style.display = 'block';
-            } else {
-                compassionateContainer.style.display = 'none';
-            }
-        }
-
-        // Initial check
-        toggleCompassionateField();
-
-        // Add event listener for changes
-        leaveTypeSelect.addEventListener('change', toggleCompassionateField);
     });
 </script>
 

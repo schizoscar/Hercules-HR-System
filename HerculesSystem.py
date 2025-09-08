@@ -248,7 +248,6 @@ class LeaveRequest(db.Model):
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
     leave_type = db.Column(db.String(50), nullable=False)
-    compassionate_type = db.Column(db.String(50))
     reason = db.Column(db.Text)
     attachment_filename = db.Column(db.String(255))
     status = db.Column(db.String(20), default='pending')
@@ -264,21 +263,8 @@ class LeaveRequestForm(FlaskForm):
     leave_type = SelectField('Leave Type', choices=[
         ('annual', 'Annual Leave'),
         ('medical', 'Medical Leave'),
-        ('maternity', 'Maternity Leave (90 days max)'),
-        ('compassionate', 'Compassionate Leave'),
-        ('marriage', 'Marriage Leave (3 days max)'),
-        ('hospitalised', 'Hospitalised Leave (60 days/year max)'),
-        ('socso_mc', 'SOCSO MC (No limit)')
+        ('unpaid', 'Unpaid Leave')
     ], validators=[DataRequired()])
-    compassionate_type = SelectField('Compassionate Leave Type', choices=[
-        ('', 'Select relationship'),
-        ('child', 'Child'),
-        ('parents', 'Parents'),
-        ('husband', 'Husband'),
-        ('wife', 'Wife'),
-        ('grandparents', 'Grandparents'),
-        ('sibling', 'Sibling')
-    ], validators=[])
     reason = TextAreaField('Reason', validators=[DataRequired()])
     attachment = FileField('Attachment (if needed)', validators=[
         FileAllowed(['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'], 
@@ -397,7 +383,52 @@ def add_time_tracking_columns():
     except Exception as e:
         print(f"Error checking/adding time tracking columns: {e}")
 
-# Add this function to create initial leave balances
+@app.route('/leave_balance_history')
+@login_required
+def leave_balance_history():
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to view leave balance history.', 'danger')
+        return redirect(url_for('leaves'))
+    
+    # Get filter parameters
+    employee_id = request.args.get('employee_id', '')
+    admin_id = request.args.get('admin_id', '')
+    leave_type = request.args.get('leave_type', '')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # Build query
+    query = LeaveBalanceHistory.query
+    
+    if employee_id:
+        query = query.filter(LeaveBalanceHistory.employee_id == employee_id)
+    if admin_id:
+        query = query.filter(LeaveBalanceHistory.admin_id == admin_id)
+    if leave_type:
+        query = query.filter(LeaveBalanceHistory.leave_type == leave_type)
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+            query = query.filter(LeaveBalanceHistory.created_at >= start_date_obj)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+            query = query.filter(LeaveBalanceHistory.created_at <= end_date_obj)
+        except ValueError:
+            pass
+    
+    history_records = query.order_by(LeaveBalanceHistory.created_at.desc()).all()
+    employees = Employee.query.all()
+    admins = Employee.query.filter(Employee.user_type.in_(['admin', 'supervisor'])).all()
+    
+    return render_template('leave_balance_history.html', 
+                         history_records=history_records,
+                         employees=employees,
+                         admins=admins)
+
+# create initial leave balances
 def create_initial_leave_balances():
     employees = Employee.query.all()
     for employee in employees:
@@ -521,16 +552,12 @@ def handle_corrupted_headers(self):
 
 werkzeug.serving.WSGIRequestHandler.handle = handle_corrupted_headers
 
-def validate_leave_days(leave_type, days_requested, compassionate_type=None):
+def validate_leave_days(leave_type, days_requested):
     """Validate leave days based on leave type"""
     max_days = {
         'annual': 365,
         'medical': 60,
-        'maternity': 90,
-        'compassionate': 3 if compassionate_type in ['child', 'parents', 'husband', 'wife'] else 1,
-        'marriage': 3,
-        'hospitalised': 60,
-        'socso_mc': 365
+        'unpaid': 365  # Unlimited but set a reasonable max
     }
     
     if leave_type not in max_days:
@@ -539,11 +566,7 @@ def validate_leave_days(leave_type, days_requested, compassionate_type=None):
     max_allowed = max_days[leave_type]
     
     if days_requested > max_allowed:
-        if leave_type == 'compassionate':
-            relationship = "immediate family" if compassionate_type in ['child', 'parents', 'husband', 'wife'] else "extended family"
-            return False, f"Compassionate leave for {relationship} is limited to {max_allowed} day(s)"
-        else:
-            return False, f"{leave_type.replace('_', ' ').title()} leave is limited to {max_allowed} days"
+        return False, f"{leave_type.title()} leave is limited to {max_allowed} days"
     
     return True, ""
 
@@ -918,10 +941,7 @@ def request_leave():
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1
         
-        compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
-        is_valid, error_message = validate_leave_days(
-            form.leave_type.data, days_requested, compassionate_type
-        )
+        is_valid, error_message = validate_leave_days(form.leave_type.data, days_requested)
         
         if not is_valid:
             flash(error_message, 'danger')
@@ -968,7 +988,6 @@ def request_leave():
             start_date=form.start_date.data,
             end_date=form.end_date.data,
             leave_type=form.leave_type.data,
-            compassionate_type=compassionate_type,
             reason=form.reason.data,
             attachment_filename=attachment_filename,
             status='pending',
@@ -1513,10 +1532,7 @@ def admin_edit_leave(request_id):
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1
         
-        compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
-        is_valid, error_message = validate_leave_days(
-            form.leave_type.data, days_requested, compassionate_type
-        )
+        is_valid, error_message = validate_leave_days(form.leave_type.data, days_requested)
         
         if not is_valid:
             flash(error_message, 'danger')
@@ -1541,7 +1557,6 @@ def admin_edit_leave(request_id):
         leave_request.start_date = form.start_date.data
         leave_request.end_date = form.end_date.data
         leave_request.leave_type = form.leave_type.data
-        leave_request.compassionate_type = compassionate_type
         leave_request.reason = form.reason.data
         leave_request.days_requested = days_requested
         
@@ -1640,10 +1655,7 @@ def edit_leave(request_id):
         delta = form.end_date.data - form.start_date.data
         days_requested = delta.days + 1
         
-        compassionate_type = form.compassionate_type.data if form.leave_type.data == 'compassionate' else None
-        is_valid, error_message = validate_leave_days(
-            form.leave_type.data, days_requested, compassionate_type
-        )
+        is_valid, error_message = validate_leave_days(form.leave_type.data, days_requested)
         
         if not is_valid:
             flash(error_message, 'danger')
@@ -1668,7 +1680,6 @@ def edit_leave(request_id):
         leave_request.start_date = form.start_date.data
         leave_request.end_date = form.end_date.data
         leave_request.leave_type = form.leave_type.data
-        leave_request.compassionate_type = compassionate_type
         leave_request.reason = form.reason.data
         leave_request.days_requested = days_requested
         
