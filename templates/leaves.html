@@ -124,24 +124,18 @@
         </tr>
     </thead>
     <tbody>
+        {% for balance in current_user.leave_balances %}
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Annual</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">20 days</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">5 days</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">15 days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ balance.leave_type|title }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                {% if balance.leave_type == 'unpaid' %}Unlimited{% else %}{{ balance.total_days }} days{% endif %}
+            </td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ balance.used_days }} days</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                {% if balance.leave_type == 'unpaid' %}Unlimited{% else %}{{ balance.remaining_days }} days{% endif %}
+            </td>
         </tr>
-        <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Medical</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">14 days</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">2 days</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">12 days</td>
-        </tr>
-        <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Unpaid</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Unlimited</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">0 days</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Unlimited</td>
-        </tr>
+        {% endfor %}
     </tbody>
 </table>
 

@@ -168,6 +168,9 @@ class Employee(UserMixin, db.Model):
     last_lunch_start = db.Column(db.DateTime)
     last_lunch_end = db.Column(db.DateTime)
     
+    # Add the relationship to leave_balances with a different backref name
+    leave_balances = db.relationship('LeaveBalance', backref='employee_balance', lazy=True)
+    
     def generate_temp_password(self):
         """Generate a temporary password"""
         characters = string.ascii_letters + string.digits
@@ -281,7 +284,8 @@ class LeaveBalance(db.Model):
     remaining_days = db.Column(db.Integer, default=0)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    employee = db.relationship('Employee', backref=db.backref('leave_balances', lazy=True))
+    # Keep the existing relationship but use a different backref name
+    employee = db.relationship('Employee', backref=db.backref('employee_balances', lazy=True))
 
 class LeaveBalanceHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -889,6 +893,31 @@ def request_leave():
             flash(error_message, 'danger')
             return render_template('request_leave.html', form=form)
         
+        # Check if user has sufficient leave balance for paid leave types
+        if form.leave_type.data in ['annual', 'medical']:
+            leave_balance = LeaveBalance.query.filter_by(
+                employee_id=current_user.id,
+                leave_type=form.leave_type.data
+            ).first()
+            
+            if not leave_balance:
+                # If no balance record exists, create one with default values
+                default_days = 20 if form.leave_type.data == 'annual' else 14
+                leave_balance = LeaveBalance(
+                    employee_id=current_user.id,
+                    leave_type=form.leave_type.data,
+                    total_days=default_days,
+                    used_days=0,
+                    remaining_days=default_days
+                )
+                db.session.add(leave_balance)
+                db.session.commit()
+                flash(f'Created new {form.leave_type.data} leave balance with {default_days} days.', 'info')
+            
+            if leave_balance.remaining_days < days_requested:
+                flash(f'Insufficient {form.leave_type.data} leave balance. You have {leave_balance.remaining_days} days remaining, but requested {days_requested} days.', 'danger')
+                return render_template('request_leave.html', form=form)
+        
         attachment_filename = None
         if form.attachment.data:
             if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -934,6 +963,42 @@ def approve_leave(request_id):
     leave_request = LeaveRequest.query.get_or_404(request_id)
     leave_request.status = 'approved'
     leave_request.approved_at = datetime.utcnow()
+    
+    # Deduct leave balance only for paid leave types
+    if leave_request.leave_type in ['annual', 'medical']:
+        leave_balance = LeaveBalance.query.filter_by(
+            employee_id=leave_request.employee_id,
+            leave_type=leave_request.leave_type
+        ).first()
+        
+        if leave_balance:
+            if leave_balance.remaining_days >= leave_request.days_requested:
+                # Store old values
+                old_remaining = leave_balance.remaining_days
+                old_used = leave_balance.used_days
+                
+                # Update balance
+                leave_balance.used_days += leave_request.days_requested
+                leave_balance.remaining_days -= leave_request.days_requested
+                
+                # Create leave balance history record
+                history = LeaveBalanceHistory(
+                    employee_id=leave_request.employee_id,
+                    admin_id=current_user.id,
+                    leave_type=leave_request.leave_type,
+                    old_total=leave_balance.total_days,
+                    new_total=leave_balance.total_days,
+                    old_used=old_used,
+                    new_used=leave_balance.used_days,
+                    old_remaining=old_remaining,
+                    new_remaining=leave_balance.remaining_days,
+                    comment=f"Leave request approved: {leave_request.reason}"
+                )
+                db.session.add(history)
+            else:
+                flash(f'Insufficient {leave_request.leave_type} leave balance. Approval granted but balance not deducted.', 'warning')
+        else:
+            flash(f'No {leave_request.leave_type} leave balance found for employee. Approval granted but balance not deducted.', 'warning')
     
     db.session.commit()
     
@@ -1734,18 +1799,24 @@ def create_initial_leave_balances():
     employees = Employee.query.all()
     for employee in employees:
         for leave_type in ['annual', 'medical', 'unpaid']:
-            if not LeaveBalance.query.filter_by(employee_id=employee.id, leave_type=leave_type).first():    # doesnt override current emp's balances
+            # Check if this specific leave type balance exists for the employee
+            balance = LeaveBalance.query.filter_by(
+                employee_id=employee.id, 
+                leave_type=leave_type
+            ).first()
+            
+            if not balance:
+                default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
                 balance = LeaveBalance(
                     employee_id=employee.id,
                     leave_type=leave_type,
-                    total_days=20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0),    # 20 days of annual by default, 14 days of medical
+                    total_days=default_days,
                     used_days=0,
-                    remaining_days=20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+                    remaining_days=default_days
                 )
                 db.session.add(balance)
     db.session.commit()
 
-@app.route('/leave_balance_history')
 @login_required
 def leave_balance_history():
     if current_user.user_type not in ['admin', 'supervisor']:
