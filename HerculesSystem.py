@@ -6,7 +6,7 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
 from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, HiddenField
-from wtforms.validators import DataRequired, Length, Email
+from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, date
@@ -158,18 +158,23 @@ class Employee(UserMixin, db.Model):
     password = db.Column(db.String(120), nullable=False)
     full_name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    nationality = db.Column(db.String(80), nullable=False)  # Added nationality
-    employee_id = db.Column(db.String(80), unique=True, nullable=False)  # Added employee ID
+    nationality = db.Column(db.String(80), nullable=False)
+    employee_id = db.Column(db.String(80), unique=True, nullable=False)
     hire_date = db.Column(db.Date)
     is_admin = db.Column(db.Boolean, default=False)
-    user_type = db.Column(db.String(20), default='employee')  # admin, supervisor, office, factory
+    user_type = db.Column(db.String(20), default='employee')
     last_clock_in = db.Column(db.DateTime)
     last_clock_out = db.Column(db.DateTime)
     last_lunch_start = db.Column(db.DateTime)
     last_lunch_end = db.Column(db.DateTime)
     
-    # Add the relationship to leave_balances with a different backref name
-    leave_balances = db.relationship('LeaveBalance', backref='employee_balance', lazy=True)
+    # Use back_populates instead of backref for better control
+    leave_balances = db.relationship('LeaveBalance', back_populates='employee', lazy=True)
+    
+    def generate_temp_password(self):
+        characters = string.ascii_letters + string.digits
+        return ''.join(random.choice(characters) for i in range(8))
+
     
     def generate_temp_password(self):
         """Generate a temporary password"""
@@ -231,6 +236,12 @@ class EditEmployeeForm(FlaskForm):
 class ResetPasswordForm(FlaskForm):
     submit = SubmitField('Reset Password')
 
+class ChangePasswordForm(FlaskForm):
+    current_password = PasswordField('Current Password', validators=[DataRequired()])
+    new_password = PasswordField('New Password', validators=[DataRequired()])
+    confirm_password = PasswordField('Confirm New Password', validators=[DataRequired(), EqualTo('new_password', message='Passwords must match')])
+    submit = SubmitField('Change Password')
+
 class LeaveRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
@@ -278,14 +289,14 @@ class LeaveRequestForm(FlaskForm):
 class LeaveBalance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
-    leave_type = db.Column(db.String(20), nullable=False)  # annual, medical, unpaid
+    leave_type = db.Column(db.String(20), nullable=False)
     total_days = db.Column(db.Integer, default=0)
     used_days = db.Column(db.Integer, default=0)
     remaining_days = db.Column(db.Integer, default=0)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Keep the existing relationship but use a different backref name
-    employee = db.relationship('Employee', backref=db.backref('employee_balances', lazy=True))
+    # Use back_populates to match the relationship in Employee
+    employee = db.relationship('Employee', back_populates='leave_balances')
 
 class LeaveBalanceHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -385,6 +396,29 @@ def add_time_tracking_columns():
         conn.close()
     except Exception as e:
         print(f"Error checking/adding time tracking columns: {e}")
+
+# Add this function to create initial leave balances
+def create_initial_leave_balances():
+    employees = Employee.query.all()
+    for employee in employees:
+        for leave_type in ['annual', 'medical', 'unpaid']:
+            # Check if this specific leave type balance exists for the employee
+            balance = LeaveBalance.query.filter_by(
+                employee_id=employee.id, 
+                leave_type=leave_type
+            ).first()
+            
+            if not balance:
+                default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+                balance = LeaveBalance(
+                    employee_id=employee.id,
+                    leave_type=leave_type,
+                    total_days=default_days,
+                    used_days=0,
+                    remaining_days=default_days
+                )
+                db.session.add(balance)
+    db.session.commit()
 
 def add_leave_balance_tables():
     """Add leave balance and history tables if they don't exist"""
@@ -1089,12 +1123,19 @@ def add_employee():
     if form.validate_on_submit():
         username = form.email.data.split('@')[0]
         
+        # Check for duplicate username
         if Employee.query.filter_by(username=username).first():
             flash('Username already exists. Please use a different email.', 'danger')
             return render_template('add_employee.html', form=form)
         
+        # Check for duplicate employee ID
         if Employee.query.filter_by(employee_id=form.employee_id.data).first():
             flash('Employee ID already exists. Please use a different ID.', 'danger')
+            return render_template('add_employee.html', form=form)
+        
+        # Check for duplicate email (added this check)
+        if Employee.query.filter_by(email=form.email.data).first():
+            flash('Email address already exists. Please use a different email.', 'danger')
             return render_template('add_employee.html', form=form)
         
         # Capitalize nationality: first letter uppercase, rest lowercase
@@ -1794,28 +1835,7 @@ def edit_leave_balance(employee_id):
     
     return render_template('edit_leave_balance.html', employee=employee, leave_balances=leave_balances)
 
-# Add this function to create initial leave balances
-def create_initial_leave_balances():
-    employees = Employee.query.all()
-    for employee in employees:
-        for leave_type in ['annual', 'medical', 'unpaid']:
-            # Check if this specific leave type balance exists for the employee
-            balance = LeaveBalance.query.filter_by(
-                employee_id=employee.id, 
-                leave_type=leave_type
-            ).first()
-            
-            if not balance:
-                default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
-                balance = LeaveBalance(
-                    employee_id=employee.id,
-                    leave_type=leave_type,
-                    total_days=default_days,
-                    used_days=0,
-                    remaining_days=default_days
-                )
-                db.session.add(balance)
-    db.session.commit()
+
 
 @login_required
 def leave_balance_history():
@@ -2170,10 +2190,39 @@ def export_time_reports():
         download_name=f'time_report_{now.strftime("%Y%m%d_%H%M%S")}.csv'
     )
 
-@app.route('/settings')
+@app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
-    return render_template('settings.html')
+    form = ChangePasswordForm()
+    
+    if form.validate_on_submit():
+        # Verify current password
+        if not check_password_hash(current_user.password, form.current_password.data):
+            flash('Current password is incorrect.', 'danger')
+            return render_template('settings.html', form=form)
+        
+        # Validate new password
+        new_password = form.new_password.data
+        
+        # Count alphabetic characters
+        letter_count = sum(1 for char in new_password if char.isalpha())
+        
+        if letter_count < 5:
+            flash('New password must contain at least 5 letters.', 'danger')
+            return render_template('settings.html', form=form)
+        
+        if not any(char.isdigit() for char in new_password):
+            flash('New password must contain at least 1 number.', 'danger')
+            return render_template('settings.html', form=form)
+        
+        # Update password
+        current_user.password = generate_password_hash(new_password)
+        db.session.commit()
+        
+        flash('Password changed successfully!', 'success')
+        return redirect(url_for('settings'))
+    
+    return render_template('settings.html', form=form)
 
 @app.route('/test')
 def test_connection():

@@ -5,6 +5,70 @@
 {% block header %}Settings{% endblock %}
 
 {% block content %}
-<h2>System Settings</h2>
-<p>🏗️ Work in progress</p>
+<div style="max-width: 600px; margin: 0 auto;">
+    <h2>Change Password</h2>
+    
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <form method="POST">
+            {{ form.hidden_tag() }}
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">{{ form.current_password.label }}</label>
+                {{ form.current_password(class="form-control", style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;") }}
+                {% if form.current_password.errors %}
+                    <div style="color: #dc3545; font-size: 0.9rem; margin-top: 5px;">
+                        {% for error in form.current_password.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">{{ form.new_password.label }}</label>
+                {{ form.new_password(class="form-control", style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;") }}
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                    • At least 5 letters (a-z, A-Z)<br>
+                    • At least 1 number (0-9)
+                </div>
+                {% if form.new_password.errors %}
+                    <div style="color: #dc3545; font-size: 0.9rem; margin-top: 5px;">
+                        {% for error in form.new_password.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">{{ form.confirm_password.label }}</label>
+                {{ form.confirm_password(class="form-control", style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;") }}
+                {% if form.confirm_password.errors %}
+                    <div style="color: #dc3545; font-size: 0.9rem; margin-top: 5px;">
+                        {% for error in form.confirm_password.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+            
+            <button type="submit" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">
+                {{ form.submit.label.text }}
+            </button>
+        </form>
+    </div>
+</div>
+
+<style>
+    .form-control:focus {
+        border-color: #667eea;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+</style>
 {% endblock %}
