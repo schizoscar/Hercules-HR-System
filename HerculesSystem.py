@@ -25,6 +25,7 @@ import uuid
 import logging
 import ipaddress
 import pytz
+from pytz import timezone
 #from HerculesSystem import db
 
 # handler for the bad requests
@@ -258,8 +259,8 @@ class LeaveRequest(db.Model):
     employee = db.relationship('Employee', backref=db.backref('leave_requests', lazy=True))
 
 class LeaveRequestForm(FlaskForm):
-    start_date = DateField('Start Date', format='%d-%m-%y', validators=[DataRequired()])
-    end_date = DateField('End Date', format='%d-%m-%y', validators=[DataRequired()])
+    start_date = DateField('Start Date', format='%Y-%m-%d', validators=[DataRequired()])
+    end_date = DateField('End Date', format='%Y-%m-%d', validators=[DataRequired()])
     leave_type = SelectField('Leave Type', choices=[
         ('annual', 'Annual Leave'),
         ('medical', 'Medical Leave'),
@@ -671,6 +672,9 @@ def create_test_users():
         db.session.commit()
         print("Supervisor user created")
     
+    # Create initial leave balances for all employees
+    create_initial_leave_balances()
+    
     return "Test users created successfully"
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -695,28 +699,33 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # Create the form
     form = TimeTrackingForm()
+    now = datetime.now(MYT)  # Set current time to MYT
     
-    # Get today's attendance status for the current user
-    today = datetime.now().date()
-    today_attendance = TimeTracking.query.filter(
+    # Get latest clock-in and lunch records for the current day
+    latest_clock_in = TimeTracking.query.filter(
         TimeTracking.employee_id == current_user.id,
-        db.func.date(TimeTracking.timestamp) == today
-    ).order_by(TimeTracking.timestamp).all()
+        TimeTracking.action_type == 'clock_in',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
     
-    # Determine today's status
-    today_status = "Not Clocked In"
-    clock_in_time = None
-    clock_out_time = None
+    latest_lunch_start = TimeTracking.query.filter(
+        TimeTracking.employee_id == current_user.id,
+        TimeTracking.action_type == 'lunch_start',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
     
-    for record in today_attendance:
-        if record.action_type == 'clock_in':
-            clock_in_time = record.timestamp
-            today_status = "Clocked In"
-        elif record.action_type == 'clock_out':
-            clock_out_time = record.timestamp
-            today_status = "Clocked Out"
+    latest_lunch_end = TimeTracking.query.filter(
+        TimeTracking.employee_id == current_user.id,
+        TimeTracking.action_type == 'lunch_end',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
+    
+    latest_clock_out = TimeTracking.query.filter(
+        TimeTracking.employee_id == current_user.id,
+        TimeTracking.action_type == 'clock_out',
+        func.date(TimeTracking.timestamp) == now.date()
+    ).order_by(TimeTracking.timestamp.desc()).first()
     
     # Get leave statistics for the dashboard
     remaining_leave = 0
@@ -746,14 +755,34 @@ def dashboard():
         db.extract('year', LeaveRequest.start_date) == current_year
     ).count()
     
-    return render_template('dashboard.html',
-                         form=form,  # Pass the form to template
-                         today_status=today_status,
-                         clock_in_time=clock_in_time,
-                         clock_out_time=clock_out_time,
-                         remaining_leave=remaining_leave,
-                         pending_requests=pending_requests,
-                         approved_leaves=approved_leaves)
+    if current_user.user_type == 'factory':
+        return render_template(
+            'factory_dashboard.html',
+            form=form,
+            now=now,
+            MYT=MYT,
+            latest_clock_in=latest_clock_in,
+            latest_clock_out=latest_clock_out,
+            latest_lunch_start=latest_lunch_start,
+            latest_lunch_end=latest_lunch_end,
+            remaining_leave=remaining_leave,
+            pending_requests=pending_requests,
+            approved_leaves=approved_leaves
+        )
+    
+    return render_template(
+        'dashboard.html',
+        form=form,
+        now=now,
+        MYT=MYT,
+        latest_clock_in=latest_clock_in,
+        latest_clock_out=latest_clock_out,
+        latest_lunch_start=latest_lunch_start,
+        latest_lunch_end=latest_lunch_end,
+        remaining_leave=remaining_leave,
+        pending_requests=pending_requests,
+        approved_leaves=approved_leaves
+    )
 
 @app.route('/log_error', methods=['POST'])
 def log_error():
@@ -870,6 +899,20 @@ def time_tracking():
 
         try:
             db.session.commit()
+            
+            # Update employee's last action timestamps
+            employee = Employee.query.get(current_user.id)
+            if action_type == 'clock_in':
+                employee.last_clock_in = now
+            elif action_type == 'clock_out':
+                employee.last_clock_out = now
+            elif action_type == 'lunch_start':
+                employee.last_lunch_start = now
+            elif action_type == 'lunch_end':
+                employee.last_lunch_end = now
+            
+            db.session.commit()
+            
             flash(f'Successfully {action_type.replace("_", " ")}!', 'success')
         except Exception as e:
             db.session.rollback()
@@ -1240,6 +1283,20 @@ def add_employee():
         db.session.add(employee)
         db.session.commit()
         
+        # Create leave balances for the new employee - ADD THIS AFTER COMMIT
+        for leave_type in ['annual', 'medical', 'unpaid']:
+            default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+            balance = LeaveBalance(
+                employee_id=employee.id,
+                leave_type=leave_type,
+                total_days=default_days,
+                used_days=0,
+                remaining_days=default_days
+            )
+            db.session.add(balance)
+        
+        db.session.commit()
+        
         # Get the current server URL dynamically
         server_url = request.host_url.rstrip('/')
         
@@ -1282,6 +1339,7 @@ def bulk_add_employees():
         lines = form.employee_data.data.strip().split('\n')
         success_count = 0
         error_count = 0
+        employees_added = []  # Store successfully added employees
         
         for line in lines:
             try:
@@ -1315,6 +1373,7 @@ def bulk_add_employees():
                 )
                 
                 db.session.add(employee)
+                employees_added.append(employee)  # Add to list for leave balance creation
                 success_count += 1
                 
                 # Get the current server URL dynamically
@@ -1344,6 +1403,22 @@ HR Department
                 error_count += 1
         
         db.session.commit()
+        
+        # Create leave balances for all successfully added employees
+        for employee in employees_added:
+            for leave_type in ['annual', 'medical', 'unpaid']:
+                default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+                balance = LeaveBalance(
+                    employee_id=employee.id,
+                    leave_type=leave_type,
+                    total_days=default_days,
+                    used_days=0,
+                    remaining_days=default_days
+                )
+                db.session.add(balance)
+        
+        db.session.commit()
+        
         flash(f'Added {success_count} employees successfully. {error_count} failed.', 'success')
         return redirect(url_for('manage_employees'))
     
@@ -1363,9 +1438,10 @@ def delete_employee(employee_id):
         flash('You cannot delete your own account.', 'danger')
         return redirect(url_for('manage_employees'))
     
-    # Delete related records first (leave requests, time tracking)
+    # Delete related records first (leave requests, time tracking, leave balances)
     LeaveRequest.query.filter_by(employee_id=employee_id).delete()
     TimeTracking.query.filter_by(employee_id=employee_id).delete()
+    LeaveBalance.query.filter_by(employee_id=employee_id).delete()  # Add this line
     
     # Delete the employee
     db.session.delete(employee)
