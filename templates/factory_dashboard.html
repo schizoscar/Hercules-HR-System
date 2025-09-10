@@ -267,7 +267,51 @@
         margin-top: 60px !important;
     }
     
-    /* Your existing styles below */
+    /* Text color adjustments for dark theme */
+    h2 {
+        color: #000 !important;
+    }
+    
+    .dark-theme h2 {
+        color: #e4e8f0 !important;
+        -webkit-background-clip: initial !important;
+        background-clip: initial !important;
+        background: none !important;
+    }
+    
+    h3 {
+        color: #000 !important;
+    }
+    
+    .dark-theme h3 {
+        color: #e4e8f0 !important;
+    }
+    
+    p, .clock-in-time {
+        color: #000 !important;
+    }
+    
+    .dark-theme p, .dark-theme .clock-in-time {
+        color: #e4e8f0 !important;
+    }
+    
+    .time-btn, .btn {
+        color: #fff !important;
+    }
+    
+    .dark-theme .time-btn, .dark-theme .btn {
+        color: #e4e8f0 !important;
+    }
+    
+    .btn-warning {
+        color: #000 !important;
+    }
+    
+    .dark-theme .btn-warning {
+        color: #e4e8f0 !important;
+    }
+    
+    /* Existing styles */
     .dashboard-top-row {
         display: flex;
         justify-content: space-between;
@@ -461,6 +505,5 @@
             padding-left: 15px !important;
         }
     }
-
 </style>
 {% endblock %}
