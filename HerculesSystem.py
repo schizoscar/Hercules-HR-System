@@ -2,6 +2,7 @@ import requests
 from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, or_
+from sqlalchemy.orm import aliased
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
@@ -255,8 +256,11 @@ class LeaveRequest(db.Model):
     days_requested = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     approved_at = db.Column(db.DateTime)
+    approved_by_id = db.Column(db.Integer, db.ForeignKey('employee.id'))
     
-    employee = db.relationship('Employee', backref=db.backref('leave_requests', lazy=True))
+    # Explicitly specify foreign_keys for both relationships
+    employee = db.relationship('Employee', foreign_keys=[employee_id], backref=db.backref('leave_requests', lazy=True))
+    approved_by = db.relationship('Employee', foreign_keys=[approved_by_id])
 
 class LeaveRequestForm(FlaskForm):
     start_date = DateField('Start Date', format='%Y-%m-%d', validators=[DataRequired()])
@@ -991,11 +995,19 @@ def performance_reviews():
 @login_required
 def leaves():
     if current_user.user_type in ['admin', 'supervisor']:
+        # Show pending requests for approval AND the user's own requests
         pending_requests = LeaveRequest.query.filter_by(status='pending').all()
-        return render_template('leaves.html', pending_requests=pending_requests)
-    else:
         user_requests = LeaveRequest.query.filter_by(employee_id=current_user.id).order_by(LeaveRequest.created_at.desc()).all()
-        return render_template('leaves.html', user_requests=user_requests)
+        return render_template('leaves.html', 
+                             pending_requests=pending_requests, 
+                             user_requests=user_requests,
+                             is_admin_view=True)
+    else:
+        # Regular employees only see their own requests
+        user_requests = LeaveRequest.query.filter_by(employee_id=current_user.id).order_by(LeaveRequest.created_at.desc()).all()
+        return render_template('leaves.html', 
+                             user_requests=user_requests,
+                             is_admin_view=False)
 
 @app.route('/request_leave', methods=['GET', 'POST'])
 @login_required
@@ -1121,8 +1133,15 @@ def approve_leave(request_id):
         return redirect(url_for('leaves'))
     
     leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Prevent users from approving their own leave requests
+    if leave_request.employee_id == current_user.id:
+        flash('You cannot approve your own leave requests.', 'danger')
+        return redirect(url_for('leaves'))
+    
     leave_request.status = 'approved'
     leave_request.approved_at = datetime.utcnow()
+    leave_request.approved_by_id = current_user.id
     
     # Deduct leave balance only for paid leave types
     if leave_request.leave_type in ['annual', 'medical']:
@@ -1195,8 +1214,15 @@ def reject_leave(request_id):
         return redirect(url_for('leaves'))
     
     leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    # Prevent users from rejecting their own leave requests
+    if leave_request.employee_id == current_user.id:
+        flash('You cannot reject your own leave requests.', 'danger')
+        return redirect(url_for('leaves'))
+    
     leave_request.status = 'rejected'
     leave_request.approved_at = datetime.utcnow()
+    leave_request.approved_by_id = current_user.id
     
     db.session.commit()
     
@@ -1215,15 +1241,15 @@ Details:
 
 Status: Rejected
 
-Please contact your supervisor or HR department for more information.
+If you have any questions, please contact HR.
 
 Thank you,
 HR Department
 """
     if send_email(leave_request.employee.email, subject, body):
-        flash('Leave request rejected. Email notification sent to employee.', 'info')
+        flash('Leave request rejected successfully. Email notification sent to employee.', 'success')
     else:
-        flash('Leave request rejected, but failed to send email notification.', 'warning')
+        flash('Leave request rejected successfully, but failed to send email notification.', 'warning')
     
     return redirect(url_for('leaves'))
 
@@ -1506,8 +1532,6 @@ def all_leaves():
         flash('You do not have permission to view all leaves.', 'danger')
         return redirect(url_for('leaves'))
 
-    print("DEBUG: Entering all_leaves route")  # debugging
-    
     employee_id = request.args.get('employee_id', '')
     leave_type = request.args.get('leave_type', '')
     status = request.args.get('status', '')
@@ -1516,7 +1540,19 @@ def all_leaves():
     days_requested = request.args.get('days_requested', '')
     reason = request.args.get('reason', '')
     
-    query = LeaveRequest.query.join(Employee, LeaveRequest.employee_id == Employee.id)
+    # Create alias for the approver
+    Approver = db.aliased(Employee)
+    
+    # Start with base query joining employee and approver
+    query = db.session.query(
+        LeaveRequest, 
+        Employee.full_name.label('employee_name'),
+        db.func.coalesce(Approver.full_name, 'N/A').label('approver_name')
+    ).join(
+        Employee, LeaveRequest.employee_id == Employee.id
+    ).outerjoin(
+        Approver, LeaveRequest.approved_by_id == Approver.id
+    )
     
     if employee_id:
         query = query.filter(LeaveRequest.employee_id == employee_id)
@@ -1550,10 +1586,25 @@ def all_leaves():
     if reason:
         query = query.filter(LeaveRequest.reason.ilike(f'%%{reason}%%'))
     
-    all_requests = query.order_by(LeaveRequest.created_at.desc()).all()
+    # Execute query and format results
+    results = query.order_by(LeaveRequest.created_at.desc()).all()
+    
+    # Format the data for template
+    all_requests = []
+    for result in results:
+        leave_request, employee_name, approver_name = result
+        all_requests.append({
+            'leave_request': leave_request,
+            'employee_name': employee_name,
+            'approver_name': approver_name
+        })
+    
     employees = Employee.query.all()
     
-    return render_template('all_leaves.html', all_requests=all_requests, employees=employees)
+    return render_template('all_leaves.html', 
+                         all_requests=all_requests, 
+                         employees=employees,
+                         filters=request.args)
 
 @app.route('/export_leaves')
 @login_required
@@ -1570,7 +1621,16 @@ def export_leaves():
     days_requested = request.args.get('days_requested', '')
     reason = request.args.get('reason', '')
     
-    query = LeaveRequest.query.join(Employee, LeaveRequest.employee_id == Employee.id)
+    # Start with base query joining employee and approver
+    query = db.session.query(
+        LeaveRequest, 
+        Employee.full_name.label('employee_name'),
+        db.func.coalesce(Approver.full_name, 'N/A').label('approver_name')
+    ).join(
+        Employee, LeaveRequest.employee_id == Employee.id
+    ).outerjoin(
+        Employee.alias('approver'), LeaveRequest.approved_by_id == db.aliased(Employee).id
+    )
     
     if employee_id:
         query = query.filter(LeaveRequest.employee_id == employee_id)
@@ -1604,27 +1664,35 @@ def export_leaves():
     if reason:
         query = query.filter(LeaveRequest.reason.ilike(f'%%{reason}%%'))
     
-    leaves = query.order_by(LeaveRequest.created_at.desc()).all()
+    # Execute query
+    results = query.order_by(LeaveRequest.created_at.desc()).all()
     
     output = StringIO()
     writer = csv.writer(output)
     
+    # Write header row with new column
     writer.writerow(['Employee Name', 'Leave Type', 'Start Date', 'End Date', 
-                     'Days Requested', 'Status', 'Reason', 'Submitted On', 'Approved/Rejected On'])
+                     'Days Requested', 'Status', 'Reason', 'Approved/Rejected By', 
+                     'Submitted On', 'Approved/Rejected On'])
     
-    for leave in leaves:
+    # Write data rows
+    for result in results:
+        leave_request, employee_name, approver_name = result
+        
         writer.writerow([
-            leave.employee.full_name,
-            leave.leave_type.title(),
-            leave.start_date.strftime('%d-%m-%y'),
-            leave.end_date.strftime('%d-%m-%y'),
-            leave.days_requested,
-            leave.status.title(),
-            leave.reason,
-            leave.created_at.strftime('%d-%m-%dy%H:%M'),
-            leave.approved_at.strftime('%d-%m-%y %H:%M') if leave.approved_at else 'N/A'
+            employee_name,
+            leave_request.leave_type.title(),
+            leave_request.start_date.strftime('%d-%m-%y'),
+            leave_request.end_date.strftime('%d-%m-%y'),
+            leave_request.days_requested,
+            leave_request.status.title(),
+            leave_request.reason,
+            approver_name,  # New column
+            leave_request.created_at.strftime('%d-%m-%y %H:%M'),
+            leave_request.approved_at.strftime('%d-%m-%y %H:%M') if leave_request.approved_at else 'N/A'
         ])
     
+    # Generate filename with filters
     filename_parts = ['leaves_export']
     
     if employee_id:

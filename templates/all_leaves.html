@@ -16,7 +16,7 @@
                     <select name="employee_id" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
                         <option value="">All Employees</option>
                         {% for employee in employees %}
-                        <option value="{{ employee.id }}" {% if request.args.get('employee_id') == employee.id|string %}selected{% endif %}>{{ employee.full_name }}</option>
+                        <option value="{{ employee.id }}" {% if filters.get('employee_id') == employee.id|string %}selected{% endif %}>{{ employee.full_name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -24,49 +24,49 @@
                     <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #000000;">Leave Type</label>
                     <select name="leave_type" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
                         <option value="">All Types</option>
-                        <option value="annual" {% if request.args.get('leave_type') == 'annual' %}selected{% endif %}>Annual Leave</option>
-                        <option value="medical" {% if request.args.get('leave_type') == 'medical' %}selected{% endif %}>Medical Leave</option>
-                        <option value="maternity" {% if request.args.get('leave_type') == 'maternity' %}selected{% endif %}>Maternity Leave</option>
-                        <option value="compassionate" {% if request.args.get('leave_type') == 'compassionate' %}selected{% endif %}>Compassionate Leave</option>
-                        <option value="marriage" {% if request.args.get('leave_type') == 'marriage' %}selected{% endif %}>Marriage Leave</option>
-                        <option value="hospitalised" {% if request.args.get('leave_type') == 'hospitalised' %}selected{% endif %}>Hospitalised Leave</option>
-                        <option value="socso_mc" {% if request.args.get('leave_type') == 'socso_mc' %}selected{% endif %}>SOCSO MC</option>
+                        <option value="annual" {% if filters.get('leave_type') == 'annual' %}selected{% endif %}>Annual Leave</option>
+                        <option value="medical" {% if filters.get('leave_type') == 'medical' %}selected{% endif %}>Medical Leave</option>
+                        <option value="maternity" {% if filters.get('leave_type') == 'maternity' %}selected{% endif %}>Maternity Leave</option>
+                        <option value="compassionate" {% if filters.get('leave_type') == 'compassionate' %}selected{% endif %}>Compassionate Leave</option>
+                        <option value="marriage" {% if filters.get('leave_type') == 'marriage' %}selected{% endif %}>Marriage Leave</option>
+                        <option value="hospitalised" {% if filters.get('leave_type') == 'hospitalised' %}selected{% endif %}>Hospitalised Leave</option>
+                        <option value="socso_mc" {% if filters.get('leave_type') == 'socso_mc' %}selected{% endif %}>SOCSO MC</option>
                     </select>
                 </div>
                 <div>
                     <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #000000;">Status</label>
                     <select name="status" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
-                        <option value="" {% if not request.args.get('status') %}selected{% endif %}>All Status</option>
-                        <option value="pending" {% if request.args.get('status') == 'pending' %}selected{% endif %}>Pending</option>
-                        <option value="approved" {% if request.args.get('status') == 'approved' %}selected{% endif %}>Approved</option>
-                        <option value="rejected" {% if request.args.get('status') == 'rejected' %}selected{% endif %}>Rejected</option>
+                        <option value="" {% if not filters.get('status') %}selected{% endif %}>All Status</option>
+                        <option value="pending" {% if filters.get('status') == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="approved" {% if filters.get('status') == 'approved' %}selected{% endif %}>Approved</option>
+                        <option value="rejected" {% if filters.get('status') == 'rejected' %}selected{% endif %}>Rejected</option>
                     </select>
                 </div>
                 <div>
                     <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #000000;">Start Date From</label>
-                    <input type="date" name="start_date_filter" value="{{ request.args.get('start_date_filter', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                    <input type="date" name="start_date_filter" value="{{ filters.get('start_date_filter', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
                 </div>
                 <div>
                     <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #000000;">Start Date To</label>
-                    <input type="date" name="end_date_filter" value="{{ request.args.get('end_date_filter', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                    <input type="date" name="end_date_filter" value="{{ filters.get('end_date_filter', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
                 </div>
                 <div>
                     <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #000000;">Days Requested</label>
-                    <input type="number" name="days_requested" value="{{ request.args.get('days_requested', '') }}" min="0" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="e.g., 5">
+                    <input type="number" name="days_requested" value="{{ filters.get('days_requested', '') }}" min="0" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="e.g., 5">
                 </div>
                 <div>
                     <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #000000;">Reason</label>
-                    <input type="text" name="reason" value="{{ request.args.get('reason', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="Search by reason">
+                    <input type="text" name="reason" value="{{ filters.get('reason', '') }}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;" placeholder="Search by reason">
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button type="submit" style="background: var(--gradient-primary); color: white; padding: 10px 20px; border: none; border-radius: var(--border-radius); cursor: pointer; flex: 1;">
+                    <button type="submit" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; flex: 1;">
                         Apply Filters
                     </button>
-                    <button type="button" id="exportButton" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 10px 20px; border: none; border-radius: var(--border-radius); cursor: pointer; flex: 1; transition: transform 0.2s, box-shadow 0.2s;">
+                    <button type="button" id="exportButton" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; flex: 1; transition: transform 0.2s, box-shadow 0.2s;">
                         Export CSV
                     </button>
-                    {% if request.args.get('employee_id') or request.args.get('leave_type') or request.args.get('status') or request.args.get('start_date_filter') or request.args.get('end_date_filter') or request.args.get('days_requested') or request.args.get('reason') %}
-                    <a href="{{ url_for('all_leaves') }}" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 8px; text-decoration: none; flex: 1; text-align: center; transition: transform 0.2s, box-shadow 0.2s;">
+                    {% if filters.get('employee_id') or filters.get('leave_type') or filters.get('status') or filters.get('start_date_filter') or filters.get('end_date_filter') or filters.get('days_requested') or filters.get('reason') %}
+                    <a href="{{ url_for('all_leaves') }}" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; text-decoration: none; flex: 1; text-align: center; transition: transform 0.2s, box-shadow 0.2s;">
                         Clear Filters
                     </a>
                     {% endif %}
@@ -81,13 +81,13 @@
         {% if all_requests %}
         <p style="margin-bottom: 15px; font-style: italic; color: #6c757d;">
             Showing {{ all_requests|length }} leave request(s)
-            {% if request.args.get('employee_id') %} for employee "{{ employees|selectattr('id', 'equalto', request.args.get('employee_id')|int)|map(attribute='full_name')|first or 'Unknown' }}"{% endif %}
-            {% if request.args.get('leave_type') %} with type "{{ request.args.get('leave_type')|title }}"{% endif %}
-            {% if request.args.get('status') %} with status "{{ request.args.get('status')|title }}"{% endif %}
-            {% if request.args.get('start_date_filter') %} from {{ request.args.get('start_date_filter') }}{% endif %}
-            {% if request.args.get('end_date_filter') %} to {{ request.args.get('end_date_filter') }}{% endif %}
-            {% if request.args.get('days_requested') %} with {{ request.args.get('days_requested') }} days{% endif %}
-            {% if request.args.get('reason') %} with reason containing "{{ request.args.get('reason') }}"{% endif %}
+            {% if filters.get('employee_id') %} for employee "{{ employees|selectattr('id', 'equalto', filters.get('employee_id')|int)|map(attribute='full_name')|first or 'Unknown' }}"{% endif %}
+            {% if filters.get('leave_type') %} with type "{{ filters.get('leave_type')|title }}"{% endif %}
+            {% if filters.get('status') %} with status "{{ filters.get('status')|title }}"{% endif %}
+            {% if filters.get('start_date_filter') %} from {{ filters.get('start_date_filter') }}{% endif %}
+            {% if filters.get('end_date_filter') %} to {{ filters.get('end_date_filter') }}{% endif %}
+            {% if filters.get('days_requested') %} with {{ filters.get('days_requested') }} days{% endif %}
+            {% if filters.get('reason') %} with reason containing "{{ filters.get('reason') }}"{% endif %}
         </p>
         <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse;">
@@ -100,14 +100,16 @@
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #000000;">Days</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #000000;">Status</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #000000;">Reason</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #000000;">Approved/Rejected By</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #000000;">Submitted</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #000000;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for request in all_requests %}
+                    {% for request_data in all_requests %}
+                    {% set request = request_data.leave_request %}
                     <tr style="transition: background 0.3s;">
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #000000;">{{ request.employee.full_name }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #000000;">{{ request_data.employee_name }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <span style="
                                 padding: 4px 8px;
@@ -147,6 +149,9 @@
                             </span>
                         </td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee; color: #000000;">{{ request.reason|truncate(30) }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #000000;">
+                            {{ request_data.approver_name }}
+                        </td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee; color: #000000;">{{ request.created_at.strftime('%Y-%m-%d') }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <div style="display: flex; flex-direction: column; gap: 5px;">
