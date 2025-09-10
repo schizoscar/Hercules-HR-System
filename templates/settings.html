@@ -137,15 +137,59 @@
         border-color: var(--success);
         box-shadow: 0 0 0 2px rgba(76, 201, 240, 0.2);
     }
+
+    h2 {
+        color: #000 !important;
+    }
+    
+    .dark-theme h2 {
+        color: #e4e8f0 !important;
+    }
+
+    label {
+        color: #000 !important;
+    }
+    
+    .dark-theme label {
+        color: #e4e8f0 !important;
+    }
+
+    .form-control::placeholder {
+        color: #000 !important;
+        opacity: 0.7;
+    }
+    
+    .dark-theme .form-control::placeholder {
+        color: #e4e8f0 !important;
+        opacity: 0.7;
+    }
+
+    div[style*="color: #666"] {
+        color: #000 !important;
+    }
+    
+    .dark-theme div[style*="color: #666"] {
+        color: #e4e8f0 !important;
+    }
+
+    div[style*="color: #dc3545"] {
+        color: #dc3545 !important;
+    }
+    
+    .dark-theme div[style*="color: #dc3545"] {
+        color: #ff6b6b !important;
+    }
 </style>
 
 <script>
-    // Ensure toggle reflects current theme on page load
+    // Sync toggle state with saved theme on page load
     document.addEventListener('DOMContentLoaded', function () {
         const themeToggle = document.getElementById('themeToggle');
-        if (document.body.classList.contains('dark-theme')) {
-            themeToggle.checked = true;
-        }
+        const savedTheme = localStorage.getItem('theme');
+        const isDarkTheme = savedTheme === 'dark-theme';
+
+        // Sync the toggle state with the saved theme
+        themeToggle.checked = isDarkTheme;
     });
 </script>
 {% endblock %}
