@@ -1330,18 +1330,21 @@ def add_employee():
         body = f"""
 Dear {form.full_name.data},
 
-Your Hercules HR account has been created.
+We’re excited to welcome you to Hercules HR! 🎉  
+Your account has been successfully created, you can now access the system to manage your profile and explore its features.
 
-Login details:
+Here are your login details:
 Username: {username}
-Password: {temp_password}
+Temporary Password: {temp_password}
 
-Please change your password after first login.
+👉 Please make sure to change your password after your first login for security purposes.  
 
-You can access the system at: {server_url}
+You can log in here: {server_url}
 
-Thank you,
-HR Department
+If you have any questions or need assistance, feel free to reach out to the HR team.  
+
+Welcome aboard,  
+Hercules HR Dev
 """
         if send_email(form.email.data, subject, body):
             flash('Employee added successfully. Login details sent via email.', 'success')
@@ -1407,20 +1410,23 @@ def bulk_add_employees():
                 
                 subject = "Your Hercules HR Account Has Been Created"
                 body = f"""
-Dear {full_name},
+Dear {form.full_name.data},
 
-Your Hercules HR account has been created.
+We’re excited to welcome you to Hercules HR! 🎉  
+Your account has been successfully created, you can now access the system to manage your profile and explore its features.
 
-Login details:
+Here are your login details:
 Username: {username}
-Password: {temp_password}
+Temporary Password: {temp_password}
 
-Please change your password after first login.
+👉 Please make sure to change your password after your first login for security purposes.  
 
-You can access the system at: {server_url}
+You can log in here: {server_url}
 
-Thank you,
-HR Department
+If you have any questions or need assistance, feel free to reach out to the HR team.  
+
+Welcome aboard,  
+Hercules HR Dev
 """
                 send_email(email, subject, body)
                 
@@ -1941,22 +1947,24 @@ def reset_password(employee_id):
     # Get the current server URL dynamically
     server_url = request.host_url.rstrip('/')
     
-    subject = "Your Password Has Been Reset"
+    subject = "Your Hercules HR Password Has Been Reset"
     body = f"""
 Dear {employee.full_name},
 
-Your password has been reset by the administrator.
+Your Hercules HR password has been reset by the administrator.  
+Please find your updated login details below:
 
-Your login details:
-Username: {employee.username}
-Password: {temp_password}
+Username: {employee.username}  
+Temporary Password: {temp_password}  
 
-Please change your password after logging in.
+👉 For your security, please change this password immediately after logging in.
 
-You can access the system at: {server_url}
+You can access the system here: {server_url}
 
-Thank you,
-HR Department
+If you run into any issues, don’t hesitate to reach out to the HR team.  
+
+Best regards,  
+Hercules HR Department
 """
     
     email_sent = send_email(employee.email, subject, body)
