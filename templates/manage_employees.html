@@ -7,7 +7,7 @@
 {% block content %}
 <div class="dashboard-container">
     <!-- Header Section -->
-    <div class="glass" style="padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+    <div class="glass">
         <h2 style="margin-bottom: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; background-clip: text; color: transparent;">
             Employee Management
         </h2>
@@ -25,42 +25,35 @@
     </div>
 
     <!-- Current Employees Section -->
-    <div class="glass" style="padding: 25px; border-radius: 12px;">
-        <h3 style="margin-bottom: 20px; color: #333;">Current Employees</h3>
+    <div class="glass">
+        <h3>Current Employees</h3>
         
         {% if employees %}
         <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse;">
+            <table>
                 <thead>
-                    <tr style="background: rgba(67, 97, 238, 0.1);">
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Name</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Email</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Nationality</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Employee ID</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">User Type</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600;">Actions</th>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Nationality</th>
+                        <th>Employee ID</th>
+                        <th>User Type</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for employee in employees %}
                     <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #333;">{{ employee.full_name }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.email }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.nationality }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.employee_id }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
-                            <span style="
-                                padding: 4px 8px;
-                                border-radius: 12px;
-                                font-size: 0.8rem;
-                                font-weight: 500;
-                                background: rgba(67, 97, 238, 0.1);
-                                color: #4361ee;
-                            ">
+                        <td>{{ employee.full_name }}</td>
+                        <td>{{ employee.email }}</td>
+                        <td>{{ employee.nationality }}</td>
+                        <td>{{ employee.employee_id }}</td>
+                        <td>
+                            <span class="user-type-badge">
                                 {{ employee.user_type|title }}
                             </span>
                         </td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                        <td>
                             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                                 <a href="{{ url_for('edit_employee', employee_id=employee.id) }}" 
                                    class="btn btn-sm btn-primary" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;">
@@ -93,8 +86,8 @@
             </table>
         </div>
         {% else %}
-        <div style="text-align: center; padding: 40px; color: #666;">
-            <p style="font-size: 1.1rem; margin-bottom: 10px;">No employees found</p>
+        <div class="no-employees">
+            <p>No employees found</p>
             <p>Get started by adding your first employee!</p>
         </div>
         {% endif %}
@@ -112,6 +105,14 @@
         backdrop-filter: blur(10px);
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         width: 100%;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+
+    .dark-theme .glass {
+        background: var(--dark-container);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .btn {
@@ -176,9 +177,45 @@
         border-bottom: 1px solid #eee;
         color: #666;
     }
+
+    .dark-theme th,
+    .dark-theme td,
+    .dark-theme .no-employees p,
+    .dark-theme h3 {
+        color: #e4e8f0;
+    }
+    
+    .dark-theme tr:hover {
+        background: rgba(76, 201, 240, 0.1);
+    }
+    
+    .dark-theme .user-type-badge {
+        background: rgba(76, 201, 240, 0.2);
+        color: var(--success);
+    }
     
     tr:hover {
         background: rgba(67, 97, 238, 0.05);
+    }
+    
+    .user-type-badge {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: rgba(67, 97, 238, 0.1);
+        color: #4361ee;
+    }
+    
+    .no-employees {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    
+    .no-employees p {
+        font-size: 1.1rem;
+        margin-bottom: 10px;
     }
     
     /* Responsive design */
@@ -204,17 +241,14 @@
             font-size: 0.9rem;
         }
         
-        /* Stack buttons on mobile */
         td:last-child div {
             flex-direction: column;
         }
     }
     
     @media (max-width: 480px) {
-        /* Hide less important columns on very small screens */
-        td:nth-child(3), th:nth-child(3), /* Nationality */
-        td:nth-child(4), th:nth-child(4)  /* Employee ID */
-        {
+        td:nth-child(3), th:nth-child(3),
+        td:nth-child(4), th:nth-child(4) {
             display: none;
         }
     }

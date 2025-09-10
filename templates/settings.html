@@ -6,9 +6,19 @@
 
 {% block content %}
 <div style="max-width: 600px; margin: 0 auto;">
+    <h2>Appearance</h2>
+    <div class="glass" style="padding: 20px; margin-bottom: 30px;">
+        <label style="display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 0;">
+            Dark Theme
+            <div class="toggle-switch">
+                <input type="checkbox" id="themeToggle" onchange="toggleTheme()">
+                <span class="slider"></span>
+            </div>
+        </label>
+    </div>
+
     <h2>Change Password</h2>
-    
-    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+    <div class="glass" style="padding: 20px; margin-bottom: 30px;">
         <form method="POST">
             {{ form.hidden_tag() }}
             
@@ -52,7 +62,7 @@
                 {% endif %}
             </div>
             
-            <button type="submit" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">
+            <button type="submit" class="btn btn-primary" style="padding: 12px 24px;">
                 {{ form.submit.label.text }}
             </button>
         </form>
@@ -70,5 +80,72 @@
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
+
+    /* Toggle Switch Styles */
+    .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #ccc;
+        transition: 0.4s;
+        border-radius: 34px;
+    }
+
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background: white;
+        transition: 0.4s;
+        border-radius: 50%;
+    }
+
+    input:checked + .slider {
+        background: var(--gradient-primary);
+    }
+
+    input:checked + .slider:before {
+        transform: translateX(26px);
+    }
+
+    .dark-theme .form-control {
+        background: #333;
+        color: #e4e8f0;
+        border-color: #444;
+    }
+
+    .dark-theme .form-control:focus {
+        border-color: var(--success);
+        box-shadow: 0 0 0 2px rgba(76, 201, 240, 0.2);
+    }
 </style>
+
+<script>
+    // Ensure toggle reflects current theme on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        const themeToggle = document.getElementById('themeToggle');
+        if (document.body.classList.contains('dark-theme')) {
+            themeToggle.checked = true;
+        }
+    });
+</script>
 {% endblock %}

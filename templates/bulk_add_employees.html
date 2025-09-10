@@ -5,28 +5,29 @@
 {% block header %}Bulk Add Employees{% endblock %}
 
 {% block content %}
-<div style="max-width: 800px; margin: 0 auto;">
+<div class="form-container">
     <h2>Bulk Add Employees</h2>
     
-    <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+    <div class="instructions-section glass">
         <h3>Format Instructions</h3>
         <p>Enter one employee per line in the following format:</p>
-        <p><strong>Full Name, Email, Nationality, Employee ID, User Type</strong></p>
+        <p class="format-example"><strong>Full Name, Email, Nationality, Employee ID, User Type</strong></p>
         <p>Example:</p>
-        <pre style="background: white; padding: 10px; border-radius: 4px;">
+        <pre>
 John Doe, john.doe@example.com, Malaysian, EMP001, office
 Jane Smith, jane.smith@example.com, Indonesian, EMP002, factory
-Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor</pre>
+Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
+        </pre>
     </div>
     
     <form method="POST">
         {{ form.hidden_tag() }}
         
-        <div style="margin-bottom: 15px;">
-            <label for="employee_data" style="display: block; margin-bottom: 5px;">Employee Data</label>
-            {{ form.employee_data(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-height: 200px;", placeholder="Enter employee data in the specified format") }}
+        <div class="form-group">
+            <label for="employee_data">Employee Data</label>
+            {{ form.employee_data(class="form-control", placeholder="Enter employee data in the specified format") }}
             {% if form.employee_data.errors %}
-                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                <div class="error-messages">
                     {% for error in form.employee_data.errors %}
                         {{ error }}
                     {% endfor %}
@@ -34,23 +35,125 @@ Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor</pre>
             {% endif %}
         </div>
         
-        <div style="text-align: center;">
-            {{ form.submit(class="btn", style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); height: 44px;") }}
-            <a href="{{ url_for('manage_employees') }}" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 12px 24px; border: none; border-radius: 6px; text-decoration: none; display: inline-block; margin-left: 10px; font-weight: 600; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); height: 44px; line-height: 20px;">Cancel</a>
+        <div class="form-actions">
+            {{ form.submit(class="btn btn-primary") }}
+            <a href="{{ url_for('manage_employees') }}" class="btn btn-secondary">Cancel</a>
         </div>
     </form>
 </div>
 
 <style>
+    .form-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .instructions-section {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+
+    .dark-theme .instructions-section {
+        background: var(--dark-container);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .instructions-section h3,
+    .instructions-section p,
+    .instructions-section .format-example,
+    .form-group label {
+        color: #333;
+    }
+
+    .dark-theme .instructions-section h3,
+    .dark-theme .instructions-section p,
+    .dark-theme .instructions-section .format-example,
+    .dark-theme .form-group label {
+        color: #e4e8f0;
+    }
+
+    .instructions-section pre {
+        background: white;
+        padding: 10px;
+        border-radius: 4px;
+        color: #333;
+        font-size: 0.9rem;
+    }
+
+    .dark-theme .instructions-section pre {
+        background: #2d3250;
+        color: #e4e8f0;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        min-height: 200px;
+        font-size: 1rem;
+        transition: border-color 0.3s ease;
+    }
+
+    .form-control:focus {
+        border-color: var(--primary);
+        outline: none;
+    }
+
+    .error-messages {
+        color: red;
+        font-size: 0.9rem;
+        margin-top: 5px;
+    }
+
+    .dark-theme .error-messages {
+        color: #f72585;
+    }
+
+    .form-actions {
+        text-align: center;
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-weight: 600;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        height: 44px;
+        line-height: 20px;
+        transition: all 0.3s ease;
+    }
+
     .btn:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
     }
-    
-    a[style*="background: linear-gradient"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-        text-decoration: none;
+
+    .btn-primary {
+        background: var(--gradient-primary);
+        color: white;
+    }
+
+    .btn-secondary {
+        background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        color: white;
     }
 </style>
 {% endblock %}

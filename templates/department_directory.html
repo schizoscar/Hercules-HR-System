@@ -5,92 +5,94 @@
 {% block header %}Department Directory{% endblock %}
 
 {% block content %}
-<h2>Employees by Department</h2>
+<div class="directory-container">
+    <h2>Employees by Department</h2>
 
-<!-- Supervisor Section -->
-<div style="margin-bottom: 20px;">
-    <h3 style="background: linear-gradient(135deg, #8233C5, #E963FD); color: white; padding: 12px; border-radius: 8px; cursor: pointer;" onclick="toggleSection('supervisor')">
-        👨‍💼 Supervisors ({{ employees_by_type.supervisor|length }}) ▼
-    </h3>
-    <div id="supervisor" style="display: none;">
-        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-            <thead>
-                <tr style="background: #e9ecef;">
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Name</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Email</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee ID</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Nationality</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for employee in employees_by_type.supervisor %}
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.full_name }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.email }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.employee_id }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.nationality }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Supervisor Section -->
+    <div class="section glass">
+        <h3 class="section-header supervisor-header" onclick="toggleSection('supervisor')">
+            👨‍💼 Supervisors ({{ employees_by_type.supervisor|length }}) <span class="toggle-icon">▼</span>
+        </h3>
+        <div id="supervisor" class="section-content">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Employee ID</th>
+                        <th>Nationality</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for employee in employees_by_type.supervisor %}
+                    <tr>
+                        <td>{{ employee.full_name }}</td>
+                        <td>{{ employee.email }}</td>
+                        <td>{{ employee.employee_id }}</td>
+                        <td>{{ employee.nationality }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
 
-<!-- Office Employees Section -->
-<div style="margin-bottom: 20px;">
-    <h3 style="background: linear-gradient(135deg, #903775, #E8458B); color: white; padding: 12px; border-radius: 8px; cursor: pointer;" onclick="toggleSection('office')">
-        💼 Office Employees ({{ employees_by_type.office|length }}) ▼
-    </h3>
-    <div id="office" style="display: none;">
-        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-            <thead>
-                <tr style="background: #e9ecef;">
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Name</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Email</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee ID</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Nationality</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for employee in employees_by_type.office %}
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.full_name }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.email }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.employee_id }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.nationality }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Office Employees Section -->
+    <div class="section glass">
+        <h3 class="section-header office-header" onclick="toggleSection('office')">
+            💼 Office Employees ({{ employees_by_type.office|length }}) <span class="toggle-icon">▼</span>
+        </h3>
+        <div id="office" class="section-content">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Employee ID</th>
+                        <th>Nationality</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for employee in employees_by_type.office %}
+                    <tr>
+                        <td>{{ employee.full_name }}</td>
+                        <td>{{ employee.email }}</td>
+                        <td>{{ employee.employee_id }}</td>
+                        <td>{{ employee.nationality }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
 
-<!-- Factory Workers Section -->
-<div style="margin-bottom: 20px;">
-    <h3 style="background: linear-gradient(135deg, #335CC5, #637FFD); color: white; padding: 12px; border-radius: 8px; cursor: pointer;" onclick="toggleSection('factory')">
-        🏭 Factory Workers ({{ employees_by_type.factory|length }}) ▼
-    </h3>
-    <div id="factory" style="display: none;">
-        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-            <thead>
-                <tr style="background: #e9ecef;">
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Name</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Email</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Employee ID</th>
-                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Nationality</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for employee in employees_by_type.factory %}
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.full_name }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.email }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.employee_id }}</td>
-                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{{ employee.nationality }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Factory Workers Section -->
+    <div class="section glass">
+        <h3 class="section-header factory-header" onclick="toggleSection('factory')">
+            🏭 Factory Workers ({{ employees_by_type.factory|length }}) <span class="toggle-icon">▼</span>
+        </h3>
+        <div id="factory" class="section-content">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Employee ID</th>
+                        <th>Nationality</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for employee in employees_by_type.factory %}
+                    <tr>
+                        <td>{{ employee.full_name }}</td>
+                        <td>{{ employee.email }}</td>
+                        <td>{{ employee.employee_id }}</td>
+                        <td>{{ employee.nationality }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -98,14 +100,108 @@
     function toggleSection(sectionId) {
         const section = document.getElementById(sectionId);
         const header = section.previousElementSibling;
+        const toggleIcon = header.querySelector('.toggle-icon');
 
         if (section.style.display === 'none') {
             section.style.display = 'block';
-            header.innerHTML = header.innerHTML.replace('▼', '▲');
+            toggleIcon.textContent = '▲';
         } else {
             section.style.display = 'none';
-            header.innerHTML = header.innerHTML.replace('▲', '▼');
+            toggleIcon.textContent = '▼';
         }
     }
 </script>
+
+<style>
+    .directory-container {
+        max-width: 100%;
+        padding: 20px;
+    }
+
+    .section {
+        margin-bottom: 20px;
+    }
+
+    .section-header {
+        padding: 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        color: white;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .supervisor-header {
+        background: linear-gradient(135deg, #8233C5, #E963FD);
+    }
+
+    .office-header {
+        background: linear-gradient(135deg, #903775, #E8458B);
+    }
+
+    .factory-header {
+        background: linear-gradient(135deg, #335CC5, #637FFD);
+    }
+
+    .section-content {
+        display: none;
+        margin-top: 10px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th, td {
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        color: #333;
+    }
+
+    th {
+        background: #e9ecef;
+        font-weight: 600;
+    }
+
+    .dark-theme th,
+    .dark-theme td {
+        color: #e4e8f0;
+    }
+
+    .dark-theme th {
+        background: #2d3250;
+    }
+
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+
+    .dark-theme tr:hover {
+        background: rgba(76, 201, 240, 0.1);
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .directory-container {
+            padding: 10px;
+        }
+
+        th, td {
+            padding: 8px;
+            font-size: 0.9rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        th:nth-child(3), td:nth-child(3), /* Employee ID */
+        th:nth-child(4), td:nth-child(4) /* Nationality */
+        {
+            display: none;
+        }
+    }
+</style>
 {% endblock %}

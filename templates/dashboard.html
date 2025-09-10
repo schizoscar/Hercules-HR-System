@@ -443,6 +443,14 @@
         flex-direction: column;
     }
     
+    .dark-theme .welcome-section,
+    .dark-theme .time-tracking-section,
+    .dark-theme .stat-card,
+    .dark-theme .dashboard-card {
+        background: var(--dark-container);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
     .welcome-section {
         justify-content: center;
     }
@@ -455,20 +463,33 @@
         color: transparent;
     }
     
-    .welcome-section p {
+    .welcome-section p,
+    .clock-in-time,
+    .time-tracking-section h3,
+    .quick-access-header h3,
+    .dashboard-card h4,
+    .dashboard-card p,
+    .stat-label {
         color: #666;
-        margin: 0;
+    }
+    
+    .dark-theme .welcome-section p,
+    .dark-theme .clock-in-time,
+    .dark-theme .time-tracking-section h3,
+    .dark-theme .quick-access-header h3,
+    .dark-theme .dashboard-card h4,
+    .dark-theme .dashboard-card p,
+    .dark-theme .stat-label {
+        color: #e4e8f0;
     }
     
     .clock-in-time {
-        color: #666;
         margin: 10px 0 0 0;
         font-size: 0.9rem;
     }
     
     .time-tracking-section h3 {
         margin-bottom: 20px;
-        color: #333;
         text-align: center;
     }
     
@@ -505,6 +526,10 @@
         transition: all 0.3s ease;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         flex: 1;
+    }
+    
+    .dark-theme .time-btn.btn-warning {
+        color: #333;
     }
     
     .btn-primary {
@@ -559,20 +584,11 @@
         color: transparent;
     }
     
-    .stat-label {
-        color: #666;
-    }
-    
     .quick-access-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 20px;
-    }
-    
-    .quick-access-header h3 {
-        color: #333;
-        margin: 0;
     }
     
     .cards-grid {
@@ -615,17 +631,6 @@
         margin-right: 15px;
         color: white;
         font-size: 1.5rem;
-    }
-    
-    .dashboard-card h4 {
-        margin: 0;
-        color: #333;
-    }
-    
-    .dashboard-card p {
-        color: #666;
-        margin: 0;
-        line-height: 1.5;
     }
     
     .gradient-primary {

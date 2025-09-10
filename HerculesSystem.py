@@ -1,5 +1,5 @@
 import requests
-from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file
+from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import aliased
@@ -2413,6 +2413,13 @@ def export_time_reports():
         as_attachment=True,
         download_name=f'time_report_{now.strftime("%Y%m%d_%H%M%S")}.csv'
     )
+
+@app.route('/set_theme', methods=['POST'])
+def set_theme():
+    data = request.get_json()
+    theme = data.get('theme', 'light')
+    session['theme'] = theme
+    return jsonify({'status': 'success'})
 
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
