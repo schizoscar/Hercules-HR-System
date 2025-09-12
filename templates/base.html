@@ -532,8 +532,8 @@
                     {% endif %}
 
                     <!-- Common Menu for All Users -->
-                    <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">⭐ Performance Reviews</a></li>
                     <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">🌴 Leaves Management</a></li>
+                    <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">⭐ Performance Reviews</a></li>                    
                     <li><a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">📈 Reports</a></li>
                     <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
 

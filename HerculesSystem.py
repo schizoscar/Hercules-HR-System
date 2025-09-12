@@ -1,5 +1,5 @@
 import requests
-from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file, session, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file, session, jsonify, cli
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import aliased
@@ -27,9 +27,7 @@ import logging
 import ipaddress
 import pytz
 from pytz import timezone
-#from HerculesSystem import db
-
-# handler for the bad requests
+import sys
 import werkzeug.serving
 
 app = Flask(__name__)
@@ -2467,27 +2465,90 @@ def settings():
 def test_connection():
     return "Connection successful! Flask is working."
 
+import os
+import socket
+import sys
+from flask import cli
+
+try:
+    import netifaces
+    NETIFACES_AVAILABLE = True
+except ImportError:
+    NETIFACES_AVAILABLE = False
+
 if __name__ == '__main__':
     if not os.path.exists(app.instance_path):
         os.makedirs(app.instance_path)
     
-    def get_wifi_ip():
+    def get_local_ip():
+        local_ip = "127.0.0.1"
+        network_ip = "127.0.0.1"
+        
+        # Try socket connection for network IP
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except:
-            return "127.0.0.1"
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.settimeout(2)
+                s.connect(("8.8.8.8", 80))
+                network_ip = s.getsockname()[0]
+                if network_ip.startswith("127.") or network_ip.startswith("169.254."):
+                    print(f"Warning: Socket returned non-routable IP ({network_ip}). Attempting fallback.")
+                    network_ip = "127.0.0.1"
+        except socket.gaierror:
+            print("Warning: Network IP retrieval failed: DNS resolution error (no internet?).")
+        except socket.timeout:
+            print("Warning: Network IP retrieval failed: Connection timed out.")
+        except socket.error as e:
+            print(f"Warning: Network IP retrieval failed: {str(e)}.")
+        
+        # Fallback to netifaces if available
+        if NETIFACES_AVAILABLE and network_ip == "127.0.0.1":
+            try:
+                for iface in netifaces.interfaces():
+                    addrs = netifaces.ifaddresses(iface).get(netifaces.AF_INET, [])
+                    for addr in addrs:
+                        ip = addr.get('addr')
+                        if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
+                            network_ip = ip
+                            print(f"Found network IP via netifaces: {network_ip}")
+                            break
+                    if network_ip != "127.0.0.1":
+                        break
+            except Exception as e:
+                print(f"Warning: netifaces fallback failed: {str(e)}.")
+        
+        # Get local IP by hostname
+        try:
+            local_ip = socket.gethostbyname(socket.gethostname())
+            socket.inet_aton(local_ip)
+            if local_ip.startswith("127."):
+                local_ip = "127.0.0.1"
+        except (socket.gaierror, socket.error, OSError) as e:
+            print(f"Warning: Local IP retrieval failed: {str(e)}. Using 127.0.0.1.")
+        
+        if network_ip != "127.0.0.1":
+            print("Ensure firewall allows incoming connections on port 5000 for network access.")
+        
+        return local_ip, network_ip
     
-    wifi_ip = get_wifi_ip()
+    local_ip, network_ip = get_local_ip()
     
     print("=" * 50)
-    print(f"Your WiFi IP address is: {wifi_ip}")
-    print(f"Access the app at: http://{wifi_ip}:5000")
-    print(f"Test connection at: http://{wifi_ip}:5000/test")
-    print("Make sure your mobile device is on the same WiFi network!")
+    print(f"Local access: http://{local_ip}:5000")
+    print(f"Network access: http://{network_ip}:5000")
+    print(f"Test connection: http://{network_ip}:5000/test")
+    print("Ensure mobile devices are on the same WiFi network!")
     print("=" * 50)
+    
+    original_show_server_banner = cli.show_server_banner
+    
+    def custom_show_server_banner(*args, **kwargs):
+        original_show_server_banner(*args, **kwargs)
+        print(f" * Local URL: http://{local_ip}:5000")
+        if network_ip != "127.0.0.1":
+            print(f" * Network URL: http://{network_ip}:5000")
+        else:
+            print("Warning: Network access unavailable: No valid network IP detected. Check network connection or firewall.")
+    
+    cli.show_server_banner = custom_show_server_banner
     
     app.run(debug=True, host='0.0.0.0', port=5000)
