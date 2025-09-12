@@ -522,18 +522,24 @@
                 <li><a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">📊 Dashboard</a></li>
 
                 {% if current_user.is_authenticated %}
+                    <!-- Factory Worker Menu (Limited Access) -->
+                    {% if current_user.user_type == 'factory' %}
+                    <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">🌴 Leaves Management</a></li>
+                    <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
+                    <li><a href="{{ url_for('logout') }}">🚪 Logout</a></li>
+
                     <!-- Admin Menu -->
-                    {% if current_user.user_type == 'admin' %}
+                    {% elif current_user.user_type == 'admin' %}
                     <li><a href="{{ url_for('manage_employees') }}" class="{% if request.endpoint == 'manage_employees' %}active{% endif %}">👥 Manage Employees</a></li>
                     <li><a href="{{ url_for('add_employee') }}" class="{% if request.endpoint == 'add_employee' %}active{% endif %}">➕ Add Employee</a></li>
                     <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">📦 Bulk Add Employees</a></li>
                     <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">🏢 Department Directory</a></li>
                     <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">💼 Recruitment</a></li>
-                    {% endif %}
 
-                    <!-- Common Menu for All Users -->
+                    <!-- Common Menu for Admin, Office, and Supervisor Users -->
+                    {% else %}
                     <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">🌴 Leaves Management</a></li>
-                    <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">⭐ Performance Reviews</a></li>                    
+                    <li><a href="{{ url_for('performance_reviews') }}" class="{% if request.endpoint == 'performance_reviews' %}active{% endif %}">⭐ Performance Reviews</a></li
                     <li><a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">📈 Reports</a></li>
                     <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
 
@@ -541,8 +547,12 @@
                     {% if current_user.user_type == 'supervisor' %}
                             <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">🏢 Department Directory</a></li>
                     {% endif %}
+                    {% endif %}
 
+                    <!-- Logout for all users except factory (already included above) -->
+                    {% if current_user.user_type != 'factory' %}
                     <li><a href="{{ url_for('logout') }}">🚪 Logout</a></li>
+                    {% endif %}
                 {% endif %}
             </ul>
         </div>
