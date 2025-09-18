@@ -10,7 +10,7 @@ from wtforms import StringField, PasswordField, SubmitField, DateField, TextArea
 from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 import os
 import sqlite3
 import socket
@@ -1544,6 +1544,102 @@ def edit_employee(employee_id):
     
     return render_template('edit_employee.html', form=form, employee=employee)
 
+@app.route('/edit_attendance/<int:employee_id>/<string:date_str>', methods=['GET', 'POST'])
+@login_required
+def edit_attendance(employee_id, date_str):
+    # Check permission
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to edit attendance.', 'danger')
+        return redirect(url_for('reports'))
+    
+    # Convert date string to date object
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        flash('Invalid date format.', 'danger')
+        return redirect(url_for('reports'))
+    
+    # Get employee and check supervisor permission
+    employee = Employee.query.get_or_404(employee_id)
+    
+    if current_user.user_type == 'supervisor' and employee.supervisor_id != current_user.id:
+        flash('You can only edit attendance for your team members.', 'danger')
+        return redirect(url_for('reports'))
+    
+    # Get all time records for this employee on this date
+    start_datetime = datetime.combine(target_date, time.min)
+    end_datetime = datetime.combine(target_date, time.max)
+    
+    time_records = TimeTracking.query.filter(
+        TimeTracking.employee_id == employee_id,
+        TimeTracking.timestamp >= start_datetime,
+        TimeTracking.timestamp <= end_datetime
+    ).order_by(TimeTracking.timestamp).all()
+    
+    if request.method == 'POST':
+        # Handle form submission
+        clock_in_time = request.form.get('clock_in')
+        clock_out_time = request.form.get('clock_out')
+        action = request.form.get('action')
+        
+        # Delete existing records if requested
+        if action == 'delete':
+            for record in time_records:
+                db.session.delete(record)
+            db.session.commit()
+            flash('Attendance records deleted successfully.', 'success')
+            return redirect(url_for('reports'))
+        
+        # Update or create records
+        if clock_in_time:
+            clock_in_datetime = datetime.combine(target_date, datetime.strptime(clock_in_time, '%H:%M').time())
+            # Find or create clock-in record
+            clock_in_record = next((r for r in time_records if r.action_type == 'clock_in'), None)
+            if clock_in_record:
+                clock_in_record.timestamp = clock_in_datetime
+            else:
+                clock_in_record = TimeTracking(
+                    employee_id=employee_id,
+                    action_type='clock_in',
+                    timestamp=clock_in_datetime
+                )
+                db.session.add(clock_in_record)
+        
+        if clock_out_time:
+            clock_out_datetime = datetime.combine(target_date, datetime.strptime(clock_out_time, '%H:%M').time())
+            # Find or create clock-out record
+            clock_out_record = next((r for r in time_records if r.action_type == 'clock_out'), None)
+            if clock_out_record:
+                clock_out_record.timestamp = clock_out_datetime
+            else:
+                clock_out_record = TimeTracking(
+                    employee_id=employee_id,
+                    action_type='clock_out',
+                    timestamp=clock_out_datetime
+                )
+                db.session.add(clock_out_record)
+        
+        db.session.commit()
+        flash('Attendance updated successfully.', 'success')
+        return redirect(url_for('reports'))
+    
+    # Pre-fill form with existing data
+    clock_in = None
+    clock_out = None
+    
+    for record in time_records:
+        if record.action_type == 'clock_in':
+            clock_in = record.timestamp.time().strftime('%H:%M')
+        elif record.action_type == 'clock_out':
+            clock_out = record.timestamp.time().strftime('%H:%M')
+    
+    return render_template('edit_attendance.html',
+                         employee=employee,
+                         date=target_date,
+                         clock_in=clock_in,
+                         clock_out=clock_out,
+                         time_records=time_records)
+
 @app.route('/all_leaves')
 @login_required
 def all_leaves():
@@ -1640,15 +1736,17 @@ def export_leaves():
     days_requested = request.args.get('days_requested', '')
     reason = request.args.get('reason', '')
     
-    # Start with base query joining employee and approver
+    # Corrected query - use aliased Employee for approver
+    ApproverAlias = db.aliased(Employee, name='approver')
+    
     query = db.session.query(
         LeaveRequest, 
         Employee.full_name.label('employee_name'),
-        db.func.coalesce(Approver.full_name, 'N/A').label('approver_name')
+        db.func.coalesce(ApproverAlias.full_name, 'N/A').label('approver_name')
     ).join(
         Employee, LeaveRequest.employee_id == Employee.id
     ).outerjoin(
-        Employee.alias('approver'), LeaveRequest.approved_by_id == db.aliased(Employee).id
+        ApproverAlias, LeaveRequest.approved_by_id == ApproverAlias.id
     )
     
     if employee_id:
@@ -2145,16 +2243,19 @@ def test_email():
 def recruitment():
     return render_template('recruitment.html')
 
-# Add this route for the attendance report
 @app.route('/reports')
 @login_required
 def reports():
-    if current_user.user_type != 'admin':
+    if current_user.user_type not in ['admin', 'supervisor']:
         flash('You do not have permission to view reports.', 'danger')
         return redirect(url_for('dashboard'))
     
     # Get all employees for the filter dropdown
-    employees = Employee.query.all()
+    # Supervisors can only see their team members
+    if current_user.user_type == 'supervisor':
+        employees = Employee.query.filter_by(supervisor_id=current_user.id).all()
+    else:  # admin
+        employees = Employee.query.all()
     
     # Get filter parameters
     employee_id = request.args.get('employee_id')
@@ -2163,8 +2264,20 @@ def reports():
     status_filter = request.args.get('status')
     
     # Convert date strings to date objects
-    start_date = datetime.strptime(start_date_str, '%d-%m-%y').date() if start_date_str else None
-    end_date = datetime.strptime(end_date_str, '%d-%m-%y').date() if end_date_str else None
+    start_date = None
+    end_date = None
+    
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%d-%m-%y').date()
+        except ValueError:
+            flash('Invalid start date format. Use DD-MM-YY.', 'danger')
+    
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, '%d-%m-%y').date()
+        except ValueError:
+            flash('Invalid end date format. Use DD-MM-YY.', 'danger')
     
     # Default to current month if no dates provided
     if not start_date and not end_date:
@@ -2172,8 +2285,8 @@ def reports():
         start_date = today.replace(day=1)
         end_date = today
     
-    # Build query to get attendance data
-    attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter)
+    # Build query to get attendance data with additional filters for supervisors
+    attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter, current_user)
     
     # Sort attendance records by date descending (newest first)
     attendance_data.sort(key=lambda x: x['date'], reverse=True)
@@ -2181,9 +2294,10 @@ def reports():
     return render_template('reports.html', 
                          employees=employees,
                          attendance_records=attendance_data,
-                         now=datetime.now())
+                         now=datetime.now(),
+                         current_user=current_user)
 
-def get_attendance_data(employee_id=None, start_date=None, end_date=None, status_filter=None):
+def get_attendance_data(employee_id=None, start_date=None, end_date=None, status_filter=None, current_user=None):
     """Generate attendance data for all employees based on filters"""
     
     # If no dates provided, use current month
@@ -2192,11 +2306,19 @@ def get_attendance_data(employee_id=None, start_date=None, end_date=None, status
     if not end_date:
         end_date = date.today()
     
-    # Get all employees or filtered employee
+    # Get all employees or filtered employee with supervisor restrictions
     if employee_id:
-        employees = [Employee.query.get(employee_id)]
+        employee = Employee.query.get(employee_id)
+        # Check if supervisor has permission to view this employee
+        if current_user and current_user.user_type == 'supervisor':
+            if not employee or employee.supervisor_id != current_user.id:
+                return []  # No permission
+        employees = [employee] if employee else []
     else:
-        employees = Employee.query.all()
+        if current_user and current_user.user_type == 'supervisor':
+            employees = Employee.query.filter_by(supervisor_id=current_user.id).all()
+        else:
+            employees = Employee.query.all()
     
     attendance_records = []
     
@@ -2208,6 +2330,10 @@ def get_attendance_data(employee_id=None, start_date=None, end_date=None, status
     
     if employee_id:
         time_records_query = time_records_query.filter(TimeTracking.employee_id == employee_id)
+    elif current_user and current_user.user_type == 'supervisor':
+        # Filter by supervisor's team
+        team_employee_ids = [emp.id for emp in employees]
+        time_records_query = time_records_query.filter(TimeTracking.employee_id.in_(team_employee_ids))
     
     time_records = time_records_query.all()
     
@@ -2224,8 +2350,11 @@ def get_attendance_data(employee_id=None, start_date=None, end_date=None, status
         if record_date not in records_by_employee_date[employee_id]:
             records_by_employee_date[employee_id][record_date] = {
                 'clock_in': None,
-                'clock_out': None
+                'clock_out': None,
+                'records': []  # Store all records for editing
             }
+        
+        records_by_employee_date[employee_id][record_date]['records'].append(record)
         
         if record.action_type == 'clock_in':
             # Only keep the earliest clock-in for each day
@@ -2248,6 +2377,7 @@ def get_attendance_data(employee_id=None, start_date=None, end_date=None, status
             clock_out = None
             status = 'absent'
             total_hours = 'N/A'
+            record_id = None
             
             if employee.id in records_by_employee_date and current_date in records_by_employee_date[employee.id]:
                 clock_data = records_by_employee_date[employee.id][current_date]
@@ -2273,14 +2403,15 @@ def get_attendance_data(employee_id=None, start_date=None, end_date=None, status
                 'status': status,
                 'clock_in': clock_in,
                 'clock_out': clock_out,
-                'total_hours': total_hours
+                'total_hours': total_hours,
+                'employee_id': employee.id,
+                'date_str': current_date.strftime('%Y-%m-%d')
             })
             
             current_date += timedelta(days=1)
     
     return attendance_records
 
-# Add this route for exporting attendance data
 @app.route('/export_attendance')
 @login_required
 def export_attendance():

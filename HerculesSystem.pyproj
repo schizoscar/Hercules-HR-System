@@ -41,6 +41,7 @@
     <Content Include="templates\manage_leave_balances.html" />
     <Content Include="templates\edit_leave_balance.html" />
     <Content Include="templates\leave_balance_history.html" />
+    <Content Include="templates\edit_attendance.html" />
     <Content Include="templates\time_reports.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->
@@ -67,6 +68,7 @@
   <ItemGroup>
     <Folder Include="static\" />
     <Folder Include="static\css\" />
+    <Folder Include="static\images\" />
     <Folder Include="static\js\" />
     <Folder Include="templates\" />
   </ItemGroup>

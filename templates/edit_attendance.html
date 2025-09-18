@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Attendance - Hercules HR{% endblock %}
+
+{% block header %}Edit Attendance{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="glass" style="padding: 25px; border-radius: 12px; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 25px;">
+            <h3 style="color: var(--dark); margin-bottom: 5px;">Edit Attendance Record</h3>
+            <p style="color: var(--gray); font-size: 1.1rem;">
+                {{ employee.full_name }} - {{ date.strftime('%d %B %Y') }}
+            </p>
+        </div>
+
+        <form method="POST">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                <div>
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: var(--dark);">
+                        Clock In Time
+                    </label>
+                    <input type="time" class="form-control" id="clock_in" name="clock_in" 
+                           value="{{ clock_in if clock_in else '' }}"
+                           style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; background: white;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: var(--dark);">
+                        Clock Out Time
+                    </label>
+                    <input type="time" class="form-control" id="clock_out" name="clock_out" 
+                           value="{{ clock_out if clock_out else '' }}"
+                           style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; background: white;">
+                </div>
+            </div>
+
+            {% if time_records %}
+            <div style="margin-bottom: 25px;">
+                <h4 style="color: var(--dark); margin-bottom: 15px; font-size: 1.1rem;">Existing Records</h4>
+                <div style="background: rgba(67, 97, 238, 0.05); padding: 15px; border-radius: 8px;">
+                    {% for record in time_records %}
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.1);">
+                        <span style="color: var(--dark);">
+                            <strong>{{ record.action_type|title }}</strong>: 
+                            {{ record.timestamp.strftime('%H:%M:%S') }}
+                        </span>
+                        <span style="color: var(--gray); font-size: 0.9rem;">
+                            {{ record.timestamp.strftime('%d-%m-%y') }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <button type="submit" name="action" value="update"
+                        style="background: var(--gradient-primary); color: white; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.3s ease;">
+                    Update Attendance
+                </button>
+                
+                {% if time_records %}
+                <button type="submit" name="action" value="delete"
+                        onclick="return confirm('Are you sure you want to delete all attendance records for {{ employee.full_name }} on {{ date.strftime('%d-%m-%Y') }}?')"
+                        style="background: var(--gradient-accent); color: white; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.3s ease;">
+                    Delete Records
+                </button>
+                {% else %}
+                <a href="{{ url_for('reports') }}" 
+                   style="background: var(--gray); color: white; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; text-decoration: none; text-align: center; transition: all 0.3s ease;">
+                    Cancel
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow-sm);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    input {
+        transition: all 0.3s ease;
+    }
+
+    input:hover {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+    }
+
+    button, a[style*="background: var(--gray)"] {
+        transition: all 0.3s ease;
+    }
+
+    button:hover, a[style*="background: var(--gray)"]:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Keep delete confirmation
+        const deleteBtn = document.querySelector('button[name="action"][value="delete"]');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', function(event) {
+                if (!confirm('Are you sure you want to delete all attendance records for {{ employee.full_name }} on {{ date.strftime("%d-%m-%Y") }}?')) {
+                    event.preventDefault();
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

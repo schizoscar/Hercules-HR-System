@@ -8,12 +8,12 @@
 <div class="dashboard-container">
     <!-- Filter Section -->
     <div class="glass" style="padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-        <h3 style="margin-bottom: 15px;">Filter Attendance Report</h3>
+        <h3 style="margin-bottom: 15px; color: var(--dark);">Filter Attendance Report</h3>
         <form method="GET" action="{{ url_for('reports') }}">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Employee</label>
-                    <select name="employee_id" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">Employee</label>
+                    <select name="employee_id" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
                         <option value="">All Employees</option>
                         {% for employee in employees %}
                         <option value="{{ employee.id }}" {% if request.args.get('employee_id') == employee.id|string %}selected{% endif %}>
@@ -23,28 +23,28 @@
                     </select>
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Start Date</label>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">Start Date</label>
                     <input type="date" name="start_date" value="{{ request.args.get('start_date', '') }}" 
-                           style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                           style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">End Date</label>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">End Date</label>
                     <input type="date" name="end_date" value="{{ request.args.get('end_date', '') }}" 
-                           style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                           style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Status</label>
-                    <select name="status" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">Status</label>
+                    <select name="status" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
                         <option value="">All Status</option>
                         <option value="present" {% if request.args.get('status') == 'present' %}selected{% endif %}>Present</option>
                         <option value="absent" {% if request.args.get('status') == 'absent' %}selected{% endif %}>Absent</option>
                     </select>
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button type="submit" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%;">
+                    <button type="submit" style="background: var(--gradient-primary); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 500; transition: all 0.3s ease;">
                         Apply Filters
                     </button>
-                    <button type="button" onclick="exportAttendance()" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%;">
+                    <button type="button" onclick="exportAttendance()" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 500; transition: all 0.3s ease;">
                         Export CSV
                     </button>
                 </div>
@@ -54,30 +54,33 @@
 
     <!-- Attendance Records Table -->
     <div class="glass" style="padding: 25px; border-radius: 12px;">
-        <h3 style="margin-bottom: 20px;">Attendance Records</h3>
+        <h3 style="margin-bottom: 20px; color: var(--dark);">Attendance Records</h3>
         
         {% if attendance_records %}
         <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
                     <tr style="background: rgba(67, 97, 238, 0.1);">
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Employee</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Date</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Status</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Clock In</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Clock Out</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Total Hours</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Employee</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Date</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Status</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Clock In</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Clock Out</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Total Hours</th>
+                        {% if current_user.user_type in ['admin', 'supervisor'] %}
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Actions</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for record in attendance_records %}
                     <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.employee.full_name }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.date.strftime('%d-%m-%y') }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.employee.full_name }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.date.strftime('%d-%m-%y') }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee;">
                             <span style="
-                                padding: 4px 8px;
-                                border-radius: 12px;
+                                padding: 6px 12px;
+                                border-radius: 20px;
                                 font-size: 0.8rem;
                                 font-weight: 500;
                                 {% if record.status == 'present' %}background: #d4edda; color: #155724;
@@ -87,16 +90,33 @@
                                 {{ record.status.title() }}
                             </span>
                         </td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.clock_in.strftime('%H:%M') if record.clock_in else 'N/A' }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.clock_out.strftime('%H:%M') if record.clock_out else 'N/A' }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">{{ record.total_hours }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.clock_in.strftime('%H:%M') if record.clock_in else 'N/A' }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.clock_out.strftime('%H:%M') if record.clock_out else 'N/A' }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">
+                            {% if record.total_hours != 'N/A' %}
+                                {{ record.total_hours }} hrs
+                            {% else %}
+                                {{ record.total_hours }}
+                            {% endif %}
+                        </td>
+                        {% if current_user.user_type in ['admin', 'supervisor'] %}
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <a href="{{ url_for('edit_attendance', employee_id=record.employee.id, date_str=record.date.strftime('%Y-%m-%d')) }}" 
+                               class="btn btn-sm" 
+                               style="background: var(--gradient-primary); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.8rem; transition: all 0.3s ease;">
+                               Edit
+                            </a>
+                        </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
-        <p style="text-align: center; color: #666; padding: 40px;">No attendance records found for the selected filters.</p>
+        <div style="text-align: center; padding: 40px; color: var(--gray);">
+            <p>No attendance records found for the selected filters.</p>
+        </div>
         {% endif %}
     </div>
 </div>
@@ -109,13 +129,75 @@
         // Redirect to export endpoint with current filters
         window.location.href = '{{ url_for("export_attendance") }}?' + params.toString();
     }
+
+    // Add hover effects to buttons
+    document.addEventListener('DOMContentLoaded', function () {
+        const buttons = document.querySelectorAll('button');
+        buttons.forEach(button => {
+            button.addEventListener('mouseenter', function () {
+                this.style.transform = 'translateY(-2px)';
+                this.style.boxShadow = 'var(--shadow-md)';
+            });
+            button.addEventListener('mouseleave', function () {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = 'var(--shadow-sm)';
+            });
+        });
+
+        // Add hover effect to edit buttons
+        const editButtons = document.querySelectorAll('a.btn');
+        editButtons.forEach(btn => {
+            btn.addEventListener('mouseenter', function () {
+                this.style.transform = 'translateY(-2px)';
+                this.style.boxShadow = 'var(--shadow-md)';
+            });
+            btn.addEventListener('mouseleave', function () {
+                this.style.transform = 'translateY(0)';
+                this.style.boxShadow = 'none';
+            });
+        });
+    });
 </script>
 
 <style>
     .glass {
         background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(10px);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-sm);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .glass:hover {
+        box-shadow: var(--shadow-md);
+    }
+
+    select, input {
+        transition: all 0.3s ease;
+    }
+
+    select:hover, input:hover {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    select:focus, input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+    }
+
+    table {
+        border-radius: var(--border-radius);
+        overflow: hidden;
+    }
+
+    th {
+        font-weight: 600;
+        background: rgba(67, 97, 238, 0.1) !important;
+    }
+
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
     }
 </style>
 {% endblock %}
