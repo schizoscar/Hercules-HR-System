@@ -172,11 +172,6 @@ class Employee(UserMixin, db.Model):
     leave_balances = db.relationship('LeaveBalance', back_populates='employee', lazy=True)
     
     def generate_temp_password(self):
-        characters = string.ascii_letters + string.digits
-        return ''.join(random.choice(characters) for i in range(8))
-
-    
-    def generate_temp_password(self):
         """Generate a temporary password"""
         characters = string.ascii_letters + string.digits
         return ''.join(random.choice(characters) for i in range(8))
@@ -1258,8 +1253,28 @@ def manage_employees():
         flash('You do not have permission to manage employees.', 'danger')
         return redirect(url_for('dashboard'))
     
-    employees = Employee.query.filter(Employee.user_type != 'admin').all()
-    return render_template('manage_employees.html', employees=employees)
+    # Get search query from URL parameters
+    search_query = request.args.get('search', '').strip()
+    
+    # Start with base query (exclude admin users)
+    query = Employee.query.filter(Employee.user_type != 'admin')
+    
+    # Apply search filter if search query is provided
+    if search_query:
+        # Search by name (partial match) OR employee_id (exact match)
+        query = query.filter(
+            db.or_(
+                Employee.full_name.ilike(f'%{search_query}%'),  # Partial name match
+                Employee.employee_id.ilike(f'%{search_query}%')  # Partial employee ID match
+            )
+        )
+    
+    # Order by employee name
+    employees = query.order_by(Employee.full_name).all()
+    
+    return render_template('manage_employees.html', 
+                         employees=employees, 
+                         search_query=search_query)
 
 @app.route('/add_employee', methods=['GET', 'POST'])
 @login_required
@@ -1408,9 +1423,9 @@ def bulk_add_employees():
                 
                 subject = "Your Hercules HR Account Has Been Created"
                 body = f"""
-Dear {form.full_name.data},
+Dear {full_name},  <!-- CHANGED: Use full_name variable instead of form.full_name.data -->
 
-We’re excited to welcome you to Hercules HR! 🎉  
+We're excited to welcome you to Hercules HR! 🎉  
 Your account has been successfully created, you can now access the system to manage your profile and explore its features.
 
 Here are your login details:

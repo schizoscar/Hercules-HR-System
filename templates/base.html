@@ -535,6 +535,7 @@
                     <li><a href="{{ url_for('bulk_add_employees') }}" class="{% if request.endpoint == 'bulk_add_employees' %}active{% endif %}">📦 Bulk Add Employees</a></li>
                     <li><a href="{{ url_for('department_directory') }}" class="{% if request.endpoint == 'department_directory' %}active{% endif %}">🏢 Department Directory</a></li>
                     <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">💼 Recruitment</a></li>
+                    <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
 
                     <!-- Common Menu for Admin, Office, and Supervisor Users -->
                     {% else %}
