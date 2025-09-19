@@ -11,11 +11,13 @@ from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, date, time
+from math import ceil
+import io 
 import os
 import sqlite3
 import socket
 from http.client import HTTPException
-from io import StringIO
+from io import StringIO, BytesIO
 import csv
 import smtplib
 from email.mime.text import MIMEText
@@ -2251,7 +2253,6 @@ def reports():
         return redirect(url_for('dashboard'))
     
     # Get all employees for the filter dropdown
-    # Supervisors can only see their team members
     if current_user.user_type == 'supervisor':
         employees = Employee.query.filter_by(supervisor_id=current_user.id).all()
     else:  # admin
@@ -2262,22 +2263,34 @@ def reports():
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     status_filter = request.args.get('status')
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Records per page
     
-    # Convert date strings to date objects
+    # Convert date strings to date objects (handle both formats)
     start_date = None
     end_date = None
     
     if start_date_str:
         try:
-            start_date = datetime.strptime(start_date_str, '%d-%m-%y').date()
+            # Try YYYY-MM-DD format (from date input)
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         except ValueError:
-            flash('Invalid start date format. Use DD-MM-YY.', 'danger')
+            try:
+                # Try DD-MM-YY format (manual entry)
+                start_date = datetime.strptime(start_date_str, '%d-%m-%y').date()
+            except ValueError:
+                flash('Invalid start date format. Use YYYY-MM-DD or DD-MM-YY.', 'danger')
     
     if end_date_str:
         try:
-            end_date = datetime.strptime(end_date_str, '%d-%m-%y').date()
+            # Try YYYY-MM-DD format (from date input)
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         except ValueError:
-            flash('Invalid end date format. Use DD-MM-YY.', 'danger')
+            try:
+                # Try DD-MM-YY format (manual entry)
+                end_date = datetime.strptime(end_date_str, '%d-%m-%y').date()
+            except ValueError:
+                flash('Invalid end date format. Use YYYY-MM-DD or DD-MM-YY.', 'danger')
     
     # Default to current month if no dates provided
     if not start_date and not end_date:
@@ -2291,11 +2304,30 @@ def reports():
     # Sort attendance records by date descending (newest first)
     attendance_data.sort(key=lambda x: x['date'], reverse=True)
     
+    # Calculate pagination
+    total_records = len(attendance_data)
+    total_pages = ceil(total_records / per_page) if total_records > 0 else 1
+    
+    # Get records for current page
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_records = attendance_data[start_idx:end_idx]
+    
+    # Convert dates back to string for form values
+    start_date_form_value = start_date.strftime('%Y-%m-%d') if start_date else ''
+    end_date_form_value = end_date.strftime('%Y-%m-%d') if end_date else ''
+    
     return render_template('reports.html', 
                          employees=employees,
-                         attendance_records=attendance_data,
+                         attendance_records=paginated_records,
                          now=datetime.now(),
-                         current_user=current_user)
+                         current_user=current_user,
+                         page=page,
+                         per_page=per_page,
+                         total_records=total_records,
+                         total_pages=total_pages,
+                         start_date_value=start_date_form_value,
+                         end_date_value=end_date_form_value)
 
 def get_attendance_data(employee_id=None, start_date=None, end_date=None, status_filter=None, current_user=None):
     """Generate attendance data for all employees based on filters"""
@@ -2415,64 +2447,69 @@ def get_attendance_data(employee_id=None, start_date=None, end_date=None, status
 @app.route('/export_attendance')
 @login_required
 def export_attendance():
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to export attendance data.', 'danger')
-        return redirect(url_for('dashboard'))
+    if current_user.user_type not in ['admin', 'supervisor']:
+        flash('You do not have permission to export attendance.', 'danger')
+        return redirect(url_for('reports'))
     
-    # Get filter parameters
+    # Get the same filter parameters as the reports page
     employee_id = request.args.get('employee_id')
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     status_filter = request.args.get('status')
     
-    # Convert date strings to date objects
-    start_date = datetime.strptime(start_date_str, '%d-%m-%y').date() if start_date_str else None
-    end_date = datetime.strptime(end_date_str, '%d-%m-%y').date() if end_date_str else None
-    
-    # Get attendance data
-    attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter)
-    
-    # Create CSV
-    output = StringIO()
-    writer = csv.writer(output)
-    
-    # Write header
-    writer.writerow(['Employee Name', 'Date', 'Status', 'Clock In', 'Clock Out', 'Total Hours'])
-    
-    # Write data
-    for record in attendance_data:
-        writer.writerow([
-            record['employee'].full_name,
-            record['date'].strftime('%d-%m-%y'),
-            record['status'].title(),
-            record['clock_in'].strftime('%H:%M') if record['clock_in'] else 'N/A',
-            record['clock_out'].strftime('%H:%M') if record['clock_out'] else 'N/A',
-            record['total_hours']
-        ])
-    
-    # Create filename with filter info
-    filename_parts = ['attendance_report']
-    
-    if employee_id:
-        employee = Employee.query.get(employee_id)
-        filename_parts.append(f'employee_{employee.full_name.replace(" ", "_")}')
+    # Convert date strings to date objects (handle both formats)
+    start_date = None
+    end_date = None
     
     if start_date_str:
-        filename_parts.append(f'from_{start_date_str}')
+        try:
+            # Try YYYY-MM-DD format (from date input)
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            try:
+                # Try DD-MM-YY format (manual entry)
+                start_date = datetime.strptime(start_date_str, '%d-%m-%y').date()
+            except ValueError:
+                flash('Invalid start date format.', 'danger')
     
     if end_date_str:
-        filename_parts.append(f'to_{end_date_str}')
+        try:
+            # Try YYYY-MM-DD format (from date input)
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            try:
+                # Try DD-MM-YY format (manual entry)
+                end_date = datetime.strptime(end_date_str, '%d-%m-%y').date()
+            except ValueError:
+                flash('Invalid end date format.', 'danger')
     
-    if status_filter:
-        filename_parts.append(f'status_{status_filter}')
+    # Get ALL data (not paginated) for export
+    attendance_data = get_attendance_data(employee_id, start_date, end_date, status_filter, current_user)
     
-    filename = '_'.join(filename_parts) + '.csv'
+    # Check if we got any data
+    if not attendance_data:
+        flash('No attendance records found to export.', 'warning')
+        return redirect(url_for('reports'))
     
-    # Create response
-    output.seek(0)
-    response = make_response(output.getvalue())
-    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
-    response.headers['Content-type'] = 'text/csv'
+    attendance_data.sort(key=lambda x: x['date'], reverse=True)
+    
+    # Create CSV content as a string
+    csv_content = "Employee Name,Date,Status,Clock In,Clock Out,Total Hours\n"
+    
+    for record in attendance_data:
+        clock_in_str = record['clock_in'].strftime('%H:%M') if record['clock_in'] else 'N/A'
+        clock_out_str = record['clock_out'].strftime('%H:%M') if record['clock_out'] else 'N/A'
+        total_hours_str = str(record['total_hours']) if record['total_hours'] != 'N/A' else 'N/A'
+        
+        # Escape quotes in employee name if needed
+        employee_name = record['employee'].full_name.replace('"', '""')
+        
+        csv_content += f'"{employee_name}",{record["date"].strftime("%d-%m-%y")},{record["status"].title()},{clock_in_str},{clock_out_str},{total_hours_str}\n'
+    
+    # Create response with encoded data
+    response = make_response(csv_content)
+    response.headers['Content-Disposition'] = f'attachment; filename=attendance_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    response.headers['Content-type'] = 'text/csv; charset=utf-8'
     
     return response
 
@@ -2484,6 +2521,8 @@ def time_reports():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     status = request.args.get('status')
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Records per page
 
     # Query employees for admin dropdown
     employees = Employee.query.all() if current_user.user_type == 'admin' else []
@@ -2506,15 +2545,18 @@ def time_reports():
         query = query.filter(TimeTracking.status == status)
 
     # Get records sorted by timestamp (newest first)
-    time_records = query.order_by(TimeTracking.timestamp.desc()).all()
-
-    return render_template(
-        'time_reports.html',
-        time_records=time_records,
-        employees=employees,
-        now=now,
-        MYT=MYT
+    time_records = query.order_by(TimeTracking.timestamp.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
     )
+    
+    return render_template('time_reports.html',
+                         time_records=time_records.items,
+                         employees=employees,
+                         current_user=current_user,
+                         page=page,
+                         per_page=per_page,
+                         total_records=time_records.total,
+                         total_pages=time_records.pages)
 
 @app.route('/export_time_reports', methods=['GET'])
 @login_required
@@ -2544,23 +2586,33 @@ def export_time_reports():
 
     time_records = query.order_by(TimeTracking.timestamp.desc()).all()
 
-    # Generate CSV
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['Employee', 'Action', 'Timestamp', 'Status', 'IP Address', 'Address'])
+    # Generate CSV using StringIO first, then convert to bytes
+    csv_string = StringIO()
+    writer = csv.writer(csv_string)
+    writer.writerow(['Employee', 'Action', 'Timestamp', 'Status', 'IP Address'])
+    
     for record in time_records:
+        # Handle status display
+        if record.status == 'out_of_office':
+            status_display = 'Out of Office'
+        else:
+            status_display = record.status.replace('_', ' ').title() if record.status else 'N/A'
+        
         writer.writerow([
             record.employee.full_name,
             record.action_type.replace('_', ' ').title(),
             record.timestamp.astimezone(MYT).strftime('%d-%m-%y %H:%M:%S'),
-            record.status.replace('_', ' ').title() if record.status else 'N/A',
-            record.ip_address or 'N/A',
-            record.address or 'N/A'
+            status_display,
+            record.ip_address or 'N/A'
         ])
-    output.seek(0)
+    
+    # Convert to bytes
+    csv_bytes = BytesIO()
+    csv_bytes.write(csv_string.getvalue().encode('utf-8'))
+    csv_bytes.seek(0)
 
     return send_file(
-        output,
+        csv_bytes,
         mimetype='text/csv',
         as_attachment=True,
         download_name=f'time_report_{now.strftime("%Y%m%d_%H%M%S")}.csv'

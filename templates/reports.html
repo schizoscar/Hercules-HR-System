@@ -7,13 +7,14 @@
 {% block content %}
 <div class="dashboard-container">
     <!-- Filter Section -->
-    <div class="glass" style="padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-        <h3 style="margin-bottom: 15px; color: var(--dark);">Filter Attendance Report</h3>
+    <div class="glass filter-section">
+        <h3>Filter Attendance Report</h3>
         <form method="GET" action="{{ url_for('reports') }}">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+            <input type="hidden" name="page" value="1">
+            <div class="filter-grid">
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">Employee</label>
-                    <select name="employee_id" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
+                    <label>Employee</label>
+                    <select name="employee_id">
                         <option value="">All Employees</option>
                         {% for employee in employees %}
                         <option value="{{ employee.id }}" {% if request.args.get('employee_id') == employee.id|string %}selected{% endif %}>
@@ -23,76 +24,71 @@
                     </select>
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">Start Date</label>
-                    <input type="date" name="start_date" value="{{ request.args.get('start_date', '') }}" 
-                           style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
+                    <label>Start Date</label>
+                    <input type="date" name="start_date" value="{{ request.args.get('start_date', '') }}">
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">End Date</label>
-                    <input type="date" name="end_date" value="{{ request.args.get('end_date', '') }}" 
-                           style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
+                    <label>End Date</label>
+                    <input type="date" name="end_date" value="{{ request.args.get('end_date', '') }}">
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--dark);">Status</label>
-                    <select name="status" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; background: white;">
+                    <label>Status</label>
+                    <select name="status">
                         <option value="">All Status</option>
                         <option value="present" {% if request.args.get('status') == 'present' %}selected{% endif %}>Present</option>
                         <option value="absent" {% if request.args.get('status') == 'absent' %}selected{% endif %}>Absent</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 10px;">
-                    <button type="submit" style="background: var(--gradient-primary); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 500; transition: all 0.3s ease;">
-                        Apply Filters
-                    </button>
-                    <button type="button" onclick="exportAttendance()" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 500; transition: all 0.3s ease;">
-                        Export CSV
-                    </button>
+                <div class="filter-buttons">
+                    <button type="submit" class="btn-primary">Apply Filters</button>
+                    <button type="button" onclick="exportAttendance()" class="btn-success">Export CSV</button>
                 </div>
             </div>
         </form>
     </div>
 
     <!-- Attendance Records Table -->
-    <div class="glass" style="padding: 25px; border-radius: 12px;">
-        <h3 style="margin-bottom: 20px; color: var(--dark);">Attendance Records</h3>
+    <div class="glass table-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Attendance Records</h3>
+            <div style="color: var(--gray); font-size: 0.9rem;">
+                {% if total_records > 0 %}
+                    Showing {{ (page - 1) * per_page + 1 }} to {{ [page * per_page, total_records]|min }} of {{ total_records }} records
+                {% else %}
+                    No records found
+                {% endif %}
+            </div>
+        </div>
         
         {% if attendance_records %}
-        <div style="overflow-x: auto;">
-            <table style="width: 100%; border-collapse: collapse;">
+        <div class="table-container">
+            <table>
                 <thead>
-                    <tr style="background: rgba(67, 97, 238, 0.1);">
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Employee</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Date</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Status</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Clock In</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Clock Out</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Total Hours</th>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Clock In</th>
+                        <th>Clock Out</th>
+                        <th>Total Hours</th>
                         {% if current_user.user_type in ['admin', 'supervisor'] %}
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: var(--dark);">Actions</th>
+                        <th>Actions</th>
                         {% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for record in attendance_records %}
                     <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.employee.full_name }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.date.strftime('%d-%m-%y') }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
-                            <span style="
-                                padding: 6px 12px;
-                                border-radius: 20px;
-                                font-size: 0.8rem;
-                                font-weight: 500;
-                                {% if record.status == 'present' %}background: #d4edda; color: #155724;
-                                {% else %}background: #f8d7da; color: #721c24;
-                                {% endif %}
-                            ">
+                        <td>{{ record.employee.full_name }}</td>
+                        <td>{{ record.date.strftime('%d-%m-%y') }}</td>
+                        <td>
+                            <span class="status-badge status-{{ record.status }}">
                                 {{ record.status.title() }}
                             </span>
                         </td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.clock_in.strftime('%H:%M') if record.clock_in else 'N/A' }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">{{ record.clock_out.strftime('%H:%M') if record.clock_out else 'N/A' }}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #eee; color: var(--dark);">
+                        <td>{{ record.clock_in.strftime('%H:%M') if record.clock_in else 'N/A' }}</td>
+                        <td>{{ record.clock_out.strftime('%H:%M') if record.clock_out else 'N/A' }}</td>
+                        <td>
                             {% if record.total_hours != 'N/A' %}
                                 {{ record.total_hours }} hrs
                             {% else %}
@@ -100,10 +96,9 @@
                             {% endif %}
                         </td>
                         {% if current_user.user_type in ['admin', 'supervisor'] %}
-                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                        <td>
                             <a href="{{ url_for('edit_attendance', employee_id=record.employee.id, date_str=record.date.strftime('%Y-%m-%d')) }}" 
-                               class="btn btn-sm" 
-                               style="background: var(--gradient-primary); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.8rem; transition: all 0.3s ease;">
+                               class="btn-edit">
                                Edit
                             </a>
                         </td>
@@ -113,8 +108,39 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- Pagination Controls -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="{{ url_for('reports', page=page-1, employee_id=request.args.get('employee_id'), start_date=request.args.get('start_date'), end_date=request.args.get('end_date'), status=request.args.get('status')) }}"
+               class="pagination-btn">
+                &laquo; Previous
+            </a>
+            {% endif %}
+
+            {% for p in range(1, total_pages + 1) %}
+                {% if p >= page - 2 and p <= page + 2 or p == 1 or p == total_pages %}
+                <a href="{{ url_for('reports', page=p, employee_id=request.args.get('employee_id'), start_date=request.args.get('start_date'), end_date=request.args.get('end_date'), status=request.args.get('status')) }}"
+                   class="pagination-btn {% if p == page %}active{% endif %}">
+                    {{ p }}
+                </a>
+                {% elif p == page - 3 or p == page + 3 %}
+                <span class="pagination-ellipsis">...</span>
+                {% endif %}
+            {% endfor %}
+
+            {% if page < total_pages %}
+            <a href="{{ url_for('reports', page=page+1, employee_id=request.args.get('employee_id'), start_date=request.args.get('start_date'), end_date=request.args.get('end_date'), status=request.args.get('status')) }}"
+               class="pagination-btn">
+                Next &raquo;
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% else %}
-        <div style="text-align: center; padding: 40px; color: var(--gray);">
+        <div class="no-records">
             <p>No attendance records found for the selected filters.</p>
         </div>
         {% endif %}
@@ -123,37 +149,28 @@
 
 <script>
     function exportAttendance() {
-        // Get current filter parameters
         const params = new URLSearchParams(window.location.search);
-
-        // Redirect to export endpoint with current filters
+        // Remove page parameter from export to get all records
+        params.delete('page');
         window.location.href = '{{ url_for("export_attendance") }}?' + params.toString();
     }
 
-    // Add hover effects to buttons
+    // Add active state to filter buttons
     document.addEventListener('DOMContentLoaded', function () {
+        // Add loading state to buttons
         const buttons = document.querySelectorAll('button');
         buttons.forEach(button => {
-            button.addEventListener('mouseenter', function () {
-                this.style.transform = 'translateY(-2px)';
-                this.style.boxShadow = 'var(--shadow-md)';
-            });
-            button.addEventListener('mouseleave', function () {
-                this.style.transform = 'translateY(0)';
-                this.style.boxShadow = 'var(--shadow-sm)';
+            button.addEventListener('click', function () {
+                this.classList.add('loading');
             });
         });
 
-        // Add hover effect to edit buttons
-        const editButtons = document.querySelectorAll('a.btn');
-        editButtons.forEach(btn => {
-            btn.addEventListener('mouseenter', function () {
-                this.style.transform = 'translateY(-2px)';
-                this.style.boxShadow = 'var(--shadow-md)';
-            });
-            btn.addEventListener('mouseleave', function () {
-                this.style.transform = 'translateY(0)';
-                this.style.boxShadow = 'none';
+        // Handle pagination clicks
+        const paginationLinks = document.querySelectorAll('.pagination a');
+        paginationLinks.forEach(link => {
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.location.href = this.href;
             });
         });
     });
@@ -165,39 +182,241 @@
         backdrop-filter: blur(10px);
         box-shadow: var(--shadow-sm);
         border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 25px;
     }
 
-    .glass:hover {
-        box-shadow: var(--shadow-md);
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        align-items: end;
+    }
+
+    .filter-buttons {
+        display: flex;
+        gap: 10px;
+    }
+
+    label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 500;
+        color: var(--dark);
     }
 
     select, input {
-        transition: all 0.3s ease;
+        width: 100%;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        background: white;
+        transition: border-color 0.3s ease;
     }
 
     select:hover, input:hover {
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
     }
 
     select:focus, input:focus {
         outline: none;
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        width: 100%;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+
+    button:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md);
+    }
+
+    button.loading {
+        opacity: 0.7;
+        cursor: wait;
+    }
+
+    .btn-primary {
+        background: var(--gradient-primary);
+        color: white;
+    }
+
+    .btn-success {
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        color: white;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        max-height: 600px;
     }
 
     table {
+        width: 100%;
+        border-collapse: collapse;
         border-radius: var(--border-radius);
         overflow: hidden;
     }
 
     th {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        color: var(--dark);
         font-weight: 600;
-        background: rgba(67, 97, 238, 0.1) !important;
+        background: rgba(67, 97, 238, 0.1);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        color: var(--dark);
     }
 
     tr:hover {
-        background: rgba(67, 97, 238, 0.05);
+        background: rgba(67, 97, 238, 0.03);
+    }
+
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        display: inline-block;
+        min-width: 70px;
+        text-align: center;
+    }
+
+    .status-present {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .status-absent {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .btn-edit {
+        background: var(--gradient-primary);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 0.8rem;
+        transition: all 0.2s ease;
+        display: inline-block;
+    }
+
+    .btn-edit:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .no-records {
+        text-align: center;
+        padding: 40px;
+        color: var(--gray);
+    }
+
+    h3 {
+        margin-bottom: 15px;
+        color: var(--dark);
+    }
+
+    /* Pagination Styles */
+    .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 25px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(0,0,0,0.1);
+        flex-wrap: wrap;
+    }
+
+    .pagination-btn {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        text-decoration: none;
+        color: var(--dark);
+        transition: all 0.2s ease;
+        min-width: 40px;
+        text-align: center;
+        font-size: 0.9rem;
+    }
+
+    .pagination-btn:hover {
+        background: var(--gradient-primary);
+        color: white;
+        border-color: var(--primary);
+        transform: translateY(-1px);
+    }
+
+    .pagination-btn.active {
+        background: var(--gradient-primary);
+        color: white;
+        border-color: var(--primary);
+        font-weight: 600;
+    }
+
+    .pagination-ellipsis {
+        padding: 8px 4px;
+        color: var(--gray);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .filter-buttons {
+            flex-direction: column;
+        }
+        
+        .pagination {
+            gap: 4px;
+        }
+        
+        .pagination-btn {
+            padding: 6px 8px;
+            min-width: 35px;
+            font-size: 0.8rem;
+        }
+        
+        .table-container {
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 8px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .glass {
+            padding: 15px;
+        }
+        
+        .pagination {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            justify-content: flex-start;
+        }
     }
 </style>
 {% endblock %}
