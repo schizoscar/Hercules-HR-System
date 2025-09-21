@@ -262,8 +262,12 @@ class LeaveRequestForm(FlaskForm):
     end_date = DateField('End Date', format='%Y-%m-%d', validators=[DataRequired()])
     leave_type = SelectField('Leave Type', choices=[
         ('annual', 'Annual Leave'),
-        ('medical', 'Medical Leave'),
-        ('unpaid', 'Unpaid Leave')
+        ('unpaid', 'Unpaid Leave'),
+        ('maternity', 'Maternity Leave'),
+        ('compassionate', 'Compassionate Leave'),
+        ('marriage', 'Marriage Leave'),
+        ('hospitalized', 'Hospitalized Leave'),
+        ('socso_mc', 'Socso MC')
     ], validators=[DataRequired()])
     reason = TextAreaField('Reason', validators=[DataRequired()])
     attachment = FileField('Attachment (if needed)', validators=[
@@ -432,7 +436,7 @@ def leave_balance_history():
 def create_initial_leave_balances():
     employees = Employee.query.all()
     for employee in employees:
-        for leave_type in ['annual', 'medical', 'unpaid']:
+        for leave_type in ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']:
             # Check if this specific leave type balance exists for the employee
             balance = LeaveBalance.query.filter_by(
                 employee_id=employee.id, 
@@ -440,7 +444,24 @@ def create_initial_leave_balances():
             ).first()
             
             if not balance:
-                default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+                # Set default days based on leave type
+                if leave_type == 'annual':
+                    default_days = 20
+                elif leave_type == 'medical':  # Keep medical for backward compatibility
+                    default_days = 14
+                elif leave_type == 'maternity':
+                    default_days = 90
+                elif leave_type == 'compassionate':
+                    default_days = 3
+                elif leave_type == 'marriage':
+                    default_days = 3
+                elif leave_type == 'hospitalized':
+                    default_days = 60
+                elif leave_type == 'socso_mc':
+                    default_days = 14  # Same as medical
+                else:  # unpaid and others
+                    default_days = 0
+                
                 balance = LeaveBalance(
                     employee_id=employee.id,
                     leave_type=leave_type,
@@ -553,20 +574,19 @@ def handle_corrupted_headers(self):
 werkzeug.serving.WSGIRequestHandler.handle = handle_corrupted_headers
 
 def validate_leave_days(leave_type, days_requested):
-    """Validate leave days based on leave type"""
-    max_days = {
-        'annual': 365,
-        'medical': 60,
-        'unpaid': 365  # Unlimited but set a reasonable max
+    """Validate if the requested leave days are within allowed limits"""
+    max_limits = {
+        'medical': 14,
+        'maternity': 90,
+        'compassionate': 3,
+        'marriage': 3,
+        'hospitalized': 60,
+        'socso_mc': 14
     }
     
-    if leave_type not in max_days:
-        return False, "Invalid leave type"
-    
-    max_allowed = max_days[leave_type]
-    
-    if days_requested > max_allowed:
-        return False, f"{leave_type.title()} leave is limited to {max_allowed} days"
+    if leave_type in max_limits:
+        if days_requested > max_limits[leave_type]:
+            return False, f"Maximum {max_limits[leave_type]} days allowed for {leave_type.replace('_', ' ').title()} Leave"
     
     return True, ""
 
@@ -1022,19 +1042,16 @@ def request_leave():
         overlapping_leaves = LeaveRequest.query.filter(
             LeaveRequest.employee_id == current_user.id,
             LeaveRequest.status.in_(['approved', 'pending']),
-            LeaveRequest.id != (request.args.get('request_id') if request.args.get('request_id') else None),  # Exclude current request when editing
+            LeaveRequest.id != (request.args.get('request_id') if request.args.get('request_id') else None),
             db.or_(
-                # New leave starts during existing leave
                 db.and_(
                     form.start_date.data >= LeaveRequest.start_date,
                     form.start_date.data <= LeaveRequest.end_date
                 ),
-                # New leave ends during existing leave
                 db.and_(
                     form.end_date.data >= LeaveRequest.start_date,
                     form.end_date.data <= LeaveRequest.end_date
                 ),
-                # New leave completely contains existing leave
                 db.and_(
                     form.start_date.data <= LeaveRequest.start_date,
                     form.end_date.data >= LeaveRequest.end_date
@@ -1055,6 +1072,7 @@ def request_leave():
             flash('Your leave request overlaps with existing leave(s): ' + ', '.join(overlap_messages), 'danger')
             return render_template('request_leave.html', form=form)
       
+        # Validate leave days against maximum limits
         is_valid, error_message = validate_leave_days(form.leave_type.data, days_requested)
         
         if not is_valid:
@@ -1062,7 +1080,8 @@ def request_leave():
             return render_template('request_leave.html', form=form)
         
         # Check if user has sufficient leave balance for paid leave types
-        if form.leave_type.data in ['annual', 'medical']:
+        paid_leave_types = ['annual', 'medical', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']
+        if form.leave_type.data in paid_leave_types:
             leave_balance = LeaveBalance.query.filter_by(
                 employee_id=current_user.id,
                 leave_type=form.leave_type.data
@@ -1070,7 +1089,13 @@ def request_leave():
             
             if not leave_balance:
                 # If no balance record exists, create one with default values
-                default_days = 20 if form.leave_type.data == 'annual' else 14
+                default_days = 20 if form.leave_type.data == 'annual' else (
+                    14 if form.leave_type.data in ['medical', 'socso_mc'] else (
+                    90 if form.leave_type.data == 'maternity' else (
+                    3 if form.leave_type.data in ['compassionate', 'marriage'] else (
+                    60 if form.leave_type.data == 'hospitalized' else 0
+                ))))
+                
                 leave_balance = LeaveBalance(
                     employee_id=current_user.id,
                     leave_type=form.leave_type.data,
@@ -1139,7 +1164,8 @@ def approve_leave(request_id):
     leave_request.approved_by_id = current_user.id
     
     # Deduct leave balance only for paid leave types
-    if leave_request.leave_type in ['annual', 'medical']:
+    paid_leave_types = ['annual', 'medical', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']
+    if leave_request.leave_type in paid_leave_types:
         leave_balance = LeaveBalance.query.filter_by(
             employee_id=leave_request.employee_id,
             leave_type=leave_request.leave_type
@@ -1183,7 +1209,7 @@ Dear {leave_request.employee.full_name},
 Your leave request has been approved by {current_user.full_name}.
 
 Details:
-- Leave Type: {leave_request.leave_type.title()}
+- Leave Type: {leave_request.leave_type.replace('_', ' ').title()}
 - Start Date: {leave_request.start_date.strftime('%d-%m-%y')}
 - End Date: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
@@ -1325,8 +1351,13 @@ def add_employee():
         db.session.commit()
         
         # Create leave balances for the new employee - ADD THIS AFTER COMMIT
-        for leave_type in ['annual', 'medical', 'unpaid']:
-            default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+        for leave_type in ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']:
+            default_days = 20 if leave_type == 'annual' else (
+                14 if leave_type in ['medical', 'socso_mc'] else (
+                90 if leave_type == 'maternity' else (
+                3 if leave_type in ['compassionate', 'marriage'] else (
+                60 if leave_type == 'hospitalized' else 0
+            ))))
             balance = LeaveBalance(
                 employee_id=employee.id,
                 leave_type=leave_type,
@@ -1335,8 +1366,6 @@ def add_employee():
                 remaining_days=default_days
             )
             db.session.add(balance)
-        
-        db.session.commit()
         
         # Get the current server URL dynamically
         server_url = request.host_url.rstrip('/')
@@ -1453,8 +1482,13 @@ Hercules HR Dev
         
         # Create leave balances for all successfully added employees
         for employee in employees_added:
-            for leave_type in ['annual', 'medical', 'unpaid']:
-                default_days = 20 if leave_type == 'annual' else (14 if leave_type == 'medical' else 0)
+            for leave_type in ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']:
+                default_days = 20 if leave_type == 'annual' else (
+                    14 if leave_type in ['medical', 'socso_mc'] else (
+                    90 if leave_type == 'maternity' else (
+                    3 if leave_type in ['compassionate', 'marriage'] else (
+                    60 if leave_type == 'hospitalized' else 0
+                ))))
                 balance = LeaveBalance(
                     employee_id=employee.id,
                     leave_type=leave_type,
@@ -1463,8 +1497,6 @@ Hercules HR Dev
                     remaining_days=default_days
                 )
                 db.session.add(balance)
-        
-        db.session.commit()
         
         flash(f'Added {success_count} employees successfully. {error_count} failed.', 'success')
         return redirect(url_for('manage_employees'))
@@ -2123,12 +2155,27 @@ def edit_leave_balance(employee_id):
     
     employee = Employee.query.get_or_404(employee_id)
     
-    # Get or create leave balances
+    # Get or create leave balances for all leave types
+    leave_types = ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']
     leave_balances = {}
-    for leave_type in ['annual', 'medical', 'unpaid']:
+    
+    for leave_type in leave_types:
         balance = LeaveBalance.query.filter_by(employee_id=employee_id, leave_type=leave_type).first()
         if not balance:
-            balance = LeaveBalance(employee_id=employee_id, leave_type=leave_type, total_days=0, used_days=0, remaining_days=0)
+            # Set default values for new leave types
+            default_days = 20 if leave_type == 'annual' else (
+                14 if leave_type in ['medical', 'socso_mc'] else (
+                90 if leave_type == 'maternity' else (
+                3 if leave_type in ['compassionate', 'marriage'] else (
+                60 if leave_type == 'hospitalized' else 0
+            ))))
+            balance = LeaveBalance(
+                employee_id=employee_id, 
+                leave_type=leave_type, 
+                total_days=default_days, 
+                used_days=0, 
+                remaining_days=default_days
+            )
             db.session.add(balance)
         leave_balances[leave_type] = balance
     
@@ -2136,7 +2183,7 @@ def edit_leave_balance(employee_id):
         try:
             comment = request.form.get('comment', '').strip()
             
-            for leave_type in ['annual', 'medical', 'unpaid']:
+            for leave_type in leave_types:
                 balance = leave_balances[leave_type]
                 
                 # Get old values for history
@@ -2176,8 +2223,6 @@ def edit_leave_balance(employee_id):
             flash('Invalid input. Please enter numeric values.', 'danger')
     
     return render_template('edit_leave_balance.html', employee=employee, leave_balances=leave_balances)
-
-
 
 @login_required
 def leave_balance_history():
