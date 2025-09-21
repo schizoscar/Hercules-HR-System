@@ -15,6 +15,7 @@
             </a>
         </div>
         <form method="GET" action="{{ url_for('manage_leave_balances') }}">
+            <input type="hidden" name="page" value="1">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
                 <div>
                     <label style="display: block; margin-bottom: 5px; font-weight: 500;">Employee Name</label>
@@ -40,12 +41,16 @@
 
     <!-- Current Employees Section -->
     <div class="glass" style="padding: 25px; border-radius: 12px;">
-        <h3 style="margin-bottom: 20px; color: #333;">Employee Leave Balances</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: #333;">Employee Leave Balances</h3>
+            {% if employees.total > 0 %}
+            <div style="color: var(--gray); font-size: 0.9rem;">
+                Showing {{ (page - 1) * per_page + 1 }} to {{ [page * per_page, employees.total]|min }} of {{ employees.total }} employees
+            </div>
+            {% endif %}
+        </div>
         
-        {% if employees %}
-        <p style="margin-bottom: 15px; font-style: italic; color: #6c757d;">
-            Showing {{ employees|length }} employee(s)
-        </p>
+        {% if employees.items %}
         <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
@@ -57,7 +62,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for employee in employees %}
+                    {% for employee in employees.items %}
                     <tr>
                         <td style="padding: 12px; border-bottom: 1px solid #eee; color: #333;">{{ employee.full_name }}</td>
                         <td style="padding: 12px; border-bottom: 1px solid #eee; color: #666;">{{ employee.email }}</td>
@@ -73,6 +78,37 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- Pagination Controls -->
+        {% if employees.pages > 1 %}
+        <div class="pagination" style="margin-top: 25px;">
+            {% if employees.has_prev %}
+            <a href="{{ url_for('manage_leave_balances', page=employees.prev_num, employee_name=request.args.get('employee_name'), employee_id_search=request.args.get('employee_id_search')) }}"
+               class="pagination-btn">
+                &laquo; Previous
+            </a>
+            {% endif %}
+
+            {% for p in range(1, employees.pages + 1) %}
+                {% if p >= employees.page - 2 and p <= employees.page + 2 or p == 1 or p == employees.pages %}
+                <a href="{{ url_for('manage_leave_balances', page=p, employee_name=request.args.get('employee_name'), employee_id_search=request.args.get('employee_id_search')) }}"
+                   class="pagination-btn {% if p == employees.page %}active{% endif %}">
+                    {{ p }}
+                </a>
+                {% elif p == employees.page - 3 or p == employees.page + 3 %}
+                <span class="pagination-ellipsis">...</span>
+                {% endif %}
+            {% endfor %}
+
+            {% if employees.has_next %}
+            <a href="{{ url_for('manage_leave_balances', page=employees.next_num, employee_name=request.args.get('employee_name'), employee_id_search=request.args.get('employee_id_search')) }}"
+               class="pagination-btn">
+                Next &raquo;
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% else %}
         <p style="text-align: center; color: #666; padding: 40px;">No employees found.</p>
         {% endif %}
@@ -185,6 +221,48 @@
     .dark-theme tr:hover {
         background: rgba(76, 201, 240, 0.1);
     }
+
+    /* Pagination Styles */
+    .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 25px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(0,0,0,0.1);
+        flex-wrap: wrap;
+    }
+
+    .pagination-btn {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        text-decoration: none;
+        color: var(--dark);
+        transition: all 0.2s ease;
+        min-width: 40px;
+        text-align: center;
+        font-size: 0.9rem;
+    }
+
+    .pagination-btn:hover {
+        background: var(--gradient-primary);
+        color: white;
+        border-color: var(--primary);
+        transform: translateY(-1px);
+    }
+
+    .pagination-btn.active {
+        background: var(--gradient-primary);
+        color: white;
+        border-color: var(--primary);
+        font-weight: 600;
+    }
+
+    .pagination-ellipsis {
+        padding: 8px 4px;
+        color: var(--gray);
+    }
     
     /* Responsive design */
     @media (max-width: 768px) {
@@ -207,6 +285,24 @@
         .btn {
             padding: 8px 12px;
             font-size: 0.9rem;
+        }
+
+        .pagination {
+            gap: 4px;
+        }
+        
+        .pagination-btn {
+            padding: 6px 8px;
+            min-width: 35px;
+            font-size: 0.8rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .pagination {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            justify-content: flex-start;
         }
     }
 </style>

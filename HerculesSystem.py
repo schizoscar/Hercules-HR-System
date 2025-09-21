@@ -1281,28 +1281,32 @@ def manage_employees():
         flash('You do not have permission to manage employees.', 'danger')
         return redirect(url_for('dashboard'))
     
-    # Get search query from URL parameters
-    search_query = request.args.get('search', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Employees per page
+    search_query = request.args.get('search', '')
     
-    # Start with base query (exclude admin users)
-    query = Employee.query.filter(Employee.user_type != 'admin')
+    # Build query
+    query = Employee.query
     
-    # Apply search filter if search query is provided
     if search_query:
-        # Search by name (partial match) OR employee_id (exact match)
         query = query.filter(
             db.or_(
-                Employee.full_name.ilike(f'%{search_query}%'),  # Partial name match
-                Employee.employee_id.ilike(f'%{search_query}%')  # Partial employee ID match
+                Employee.full_name.ilike(f'%{search_query}%'),
+                Employee.employee_id.ilike(f'%{search_query}%'),
+                Employee.email.ilike(f'%{search_query}%')
             )
         )
     
-    # Order by employee name
-    employees = query.order_by(Employee.full_name).all()
+    # Get paginated results
+    employees = query.order_by(Employee.full_name.asc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
     
-    return render_template('manage_employees.html', 
-                         employees=employees, 
-                         search_query=search_query)
+    return render_template('manage_employees.html',
+                         employees=employees,
+                         search_query=search_query,
+                         page=page,
+                         per_page=per_page)
 
 @app.route('/add_employee', methods=['GET', 'POST'])
 @login_required
@@ -1680,80 +1684,66 @@ def all_leaves():
     if current_user.user_type not in ['admin', 'supervisor']:
         flash('You do not have permission to view all leaves.', 'danger')
         return redirect(url_for('leaves'))
-
-    employee_id = request.args.get('employee_id', '')
-    leave_type = request.args.get('leave_type', '')
-    status = request.args.get('status', '')
-    start_date_filter = request.args.get('start_date_filter', '')
-    end_date_filter = request.args.get('end_date_filter', '')
-    days_requested = request.args.get('days_requested', '')
-    reason = request.args.get('reason', '')
     
-    # Create alias for the approver
-    Approver = db.aliased(Employee)
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Leave requests per page
     
-    # Start with base query joining employee and approver
-    query = db.session.query(
-        LeaveRequest, 
-        Employee.full_name.label('employee_name'),
-        db.func.coalesce(Approver.full_name, 'N/A').label('approver_name')
-    ).join(
-        Employee, LeaveRequest.employee_id == Employee.id
-    ).outerjoin(
-        Approver, LeaveRequest.approved_by_id == Approver.id
-    )
+    # Get filter parameters
+    employee_id = request.args.get('employee_id')
+    leave_type = request.args.get('leave_type')
+    status = request.args.get('status')
+    start_date_filter = request.args.get('start_date_filter')
+    end_date_filter = request.args.get('end_date_filter')
+    days_requested = request.args.get('days_requested')
+    reason = request.args.get('reason')
     
+    # Build query with explicit join condition
+    query = LeaveRequest.query.join(Employee, LeaveRequest.employee_id == Employee.id)  # Specify the exact join condition
+    
+    # Apply filters
     if employee_id:
         query = query.filter(LeaveRequest.employee_id == employee_id)
-    
     if leave_type:
         query = query.filter(LeaveRequest.leave_type == leave_type)
-    
     if status:
         query = query.filter(LeaveRequest.status == status)
-    
     if start_date_filter:
-        try:
-            start_date = datetime.strptime(start_date_filter, '%d-%m-%y').date()
-            query = query.filter(LeaveRequest.start_date >= start_date)
-        except ValueError:
-            pass
-    
+        query = query.filter(LeaveRequest.start_date >= start_date_filter)
     if end_date_filter:
-        try:
-            end_date = datetime.strptime(end_date_filter, '%d-%m-%y').date()
-            query = query.filter(LeaveRequest.start_date <= end_date)
-        except ValueError:
-            pass
-    
+        query = query.filter(LeaveRequest.start_date <= end_date_filter)
     if days_requested:
-        try:
-            query = query.filter(LeaveRequest.days_requested == int(days_requested))
-        except ValueError:
-            pass
-    
+        query = query.filter(LeaveRequest.days_requested == days_requested)
     if reason:
-        query = query.filter(LeaveRequest.reason.ilike(f'%%{reason}%%'))
+        query = query.filter(LeaveRequest.reason.ilike(f'%{reason}%'))
     
-    # Execute query and format results
-    results = query.order_by(LeaveRequest.created_at.desc()).all()
+    # Get paginated results
+    leave_requests_paginated = query.order_by(LeaveRequest.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
     
-    # Format the data for template
-    all_requests = []
-    for result in results:
-        leave_request, employee_name, approver_name = result
-        all_requests.append({
+    # Get all employees for filter dropdown
+    employees = Employee.query.order_by(Employee.full_name.asc()).all()
+    
+    # Prepare data for template
+    all_requests_data = []
+    for leave_request in leave_requests_paginated.items:
+        approver_name = 'N/A'
+        if leave_request.approved_by_id:
+            approver = Employee.query.get(leave_request.approved_by_id)
+            approver_name = approver.full_name if approver else 'N/A'
+        
+        all_requests_data.append({
             'leave_request': leave_request,
-            'employee_name': employee_name,
+            'employee_name': leave_request.employee.full_name,
             'approver_name': approver_name
         })
     
-    employees = Employee.query.all()
-    
-    return render_template('all_leaves.html', 
-                         all_requests=all_requests, 
+    return render_template('all_leaves.html',
+                         all_requests=leave_requests_paginated,
                          employees=employees,
-                         filters=request.args)
+                         filters=request.args,
+                         page=page,
+                         per_page=per_page)
 
 @app.route('/export_leaves')
 @login_required
@@ -2126,25 +2116,31 @@ Hercules HR Department
 def manage_leave_balances():
     if current_user.user_type not in ['admin', 'supervisor']:
         flash('You do not have permission to manage leave balances.', 'danger')
-        return redirect(url_for('leaves'))
+        return redirect(url_for('dashboard'))
     
-    # Get query parameters for filtering
-    employee_name = request.args.get('employee_name', '').strip()
-    employee_id_search = request.args.get('employee_id_search', '').strip()
-
-    # Start with base query
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Employees per page
+    employee_name = request.args.get('employee_name', '')
+    employee_id_search = request.args.get('employee_id_search', '')
+    
+    # Build query
     query = Employee.query
-
-    # Apply filters
+    
     if employee_name:
         query = query.filter(Employee.full_name.ilike(f'%{employee_name}%'))
+    
     if employee_id_search:
         query = query.filter(Employee.employee_id.ilike(f'%{employee_id_search}%'))
-
-    # Execute query to get filtered employees
-    employees = query.all()
-
-    return render_template('manage_leave_balances.html', employees=employees)
+    
+    # Get paginated results
+    employees = query.order_by(Employee.full_name.asc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    
+    return render_template('manage_leave_balances.html',
+                         employees=employees,
+                         page=page,
+                         per_page=per_page)
 
 @app.route('/edit_leave_balance/<int:employee_id>', methods=['GET', 'POST'])
 @login_required
@@ -2707,11 +2703,6 @@ def settings():
 @app.route('/test')
 def test_connection():
     return "Connection successful! Flask is working."
-
-import os
-import socket
-import sys
-from flask import cli
 
 try:
     import netifaces
