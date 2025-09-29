@@ -11,13 +11,22 @@
     <div class="instructions-section glass">
         <h3>Format Instructions</h3>
         <p>Enter one employee per line in the following format:</p>
-        <p class="format-example"><strong>Full Name, Email, Nationality, Employee ID, User Type</strong></p>
+        <p class="format-example"><strong>Full Name, Email, Nationality, Employee ID, User Type, Date Joined (YYYY-MM-DD), Basic Salary</strong></p>
         <p>Example:</p>
         <pre>
-John Doe, john.doe@example.com, Malaysian, EMP001, office
-Jane Smith, jane.smith@example.com, Indonesian, EMP002, factory
-Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
+John Doe, john.doe@example.com, Malaysian, EMP001, employee, 2024-01-15, 3500.00
+Jane Smith, jane.smith@example.com, Indonesian, EMP002, factory, 2024-02-01, 2800.00
+Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor, 2023-06-15, 4500.00
+Sarah Lee, sarah.lee@example.com, Malaysian, EMP003, admin, 2024-03-01, 4000.00
         </pre>
+        <div style="margin-top: 15px; padding: 10px; background: rgba(67, 97, 238, 0.1); border-radius: 4px;">
+            <h4 style="margin: 0 0 10px 0; color: #4361ee;">Annual Leave Calculation</h4>
+            <ul style="margin: 0; padding-left: 20px;">
+                <li><strong>1-2 years:</strong> 8 days annual leave</li>
+                <li><strong>2-5 years:</strong> 12 days annual leave</li>
+                <li><strong>5+ years:</strong> 16 days annual leave</li>
+            </ul>
+        </div>
     </div>
     
     <form method="POST">
@@ -51,9 +60,10 @@ Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
 
     .instructions-section {
         background: #f8f9fa;
-        padding: 15px;
-        border-radius: 5px;
-        margin-bottom: 20px;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 25px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
     }
 
     .dark-theme .instructions-section {
@@ -62,6 +72,7 @@ Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
     }
 
     .instructions-section h3,
+    .instructions-section h4,
     .instructions-section p,
     .instructions-section .format-example,
     .form-group label {
@@ -69,6 +80,7 @@ Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
     }
 
     .dark-theme .instructions-section h3,
+    .dark-theme .instructions-section h4,
     .dark-theme .instructions-section p,
     .dark-theme .instructions-section .format-example,
     .dark-theme .form-group label {
@@ -77,68 +89,98 @@ Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
 
     .instructions-section pre {
         background: white;
-        padding: 10px;
-        border-radius: 4px;
+        padding: 15px;
+        border-radius: 6px;
         color: #333;
         font-size: 0.9rem;
+        border: 1px solid #e9ecef;
+        overflow-x: auto;
     }
 
     .dark-theme .instructions-section pre {
         background: #2d3250;
         color: #e4e8f0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .instructions-section ul {
+        color: #333;
+    }
+
+    .dark-theme .instructions-section ul {
+        color: #e4e8f0;
+    }
+
+    .instructions-section li {
+        margin-bottom: 5px;
     }
 
     .form-group {
-        margin-bottom: 15px;
+        margin-bottom: 20px;
     }
 
     .form-group label {
         display: block;
-        margin-bottom: 5px;
-        font-weight: 500;
+        margin-bottom: 8px;
+        font-weight: 600;
+        font-size: 1rem;
     }
 
     .form-control {
         width: 100%;
-        padding: 8px;
+        padding: 12px;
         border: 1px solid #ddd;
-        border-radius: 4px;
+        border-radius: 6px;
         min-height: 200px;
         font-size: 1rem;
-        transition: border-color 0.3s ease;
+        transition: all 0.3s ease;
+        font-family: 'Courier New', monospace;
+        line-height: 1.4;
     }
 
     .form-control:focus {
         border-color: var(--primary);
         outline: none;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
     }
 
     .error-messages {
         color: red;
         font-size: 0.9rem;
-        margin-top: 5px;
+        margin-top: 8px;
+        padding: 8px;
+        background: rgba(220, 53, 69, 0.1);
+        border-radius: 4px;
     }
 
     .dark-theme .error-messages {
         color: #f72585;
+        background: rgba(247, 37, 133, 0.1);
     }
 
     .form-actions {
         text-align: center;
         display: flex;
         justify-content: center;
-        gap: 10px;
+        gap: 15px;
         flex-wrap: wrap;
     }
 
     .btn {
-        padding: 12px 24px;
-        border-radius: 6px;
+        padding: 12px 30px;
+        border-radius: 8px;
         font-weight: 600;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         height: 44px;
         line-height: 20px;
         transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 120px;
     }
 
     .btn:hover {
@@ -154,6 +196,31 @@ Mike Johnson, mike.johnson@example.com, Malaysian, SUP001, supervisor
     .btn-secondary {
         background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
         color: white;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .form-container {
+            padding: 15px;
+        }
+        
+        .instructions-section {
+            padding: 15px;
+        }
+        
+        .instructions-section pre {
+            font-size: 0.8rem;
+            padding: 10px;
+        }
+        
+        .form-actions {
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .btn {
+            width: 100%;
+        }
     }
 </style>
 {% endblock %}

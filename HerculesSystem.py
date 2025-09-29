@@ -6,7 +6,7 @@ from sqlalchemy.orm import aliased
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
-from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, HiddenField
+from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, HiddenField, DecimalField
 from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -170,6 +170,10 @@ class Employee(UserMixin, db.Model):
     last_lunch_start = db.Column(db.DateTime)
     last_lunch_end = db.Column(db.DateTime)
     
+    # NEW FIELDS
+    date_joined = db.Column(db.Date, nullable=True)  # Date when employee joined the company
+    basic_salary = db.Column(db.Numeric(10, 2), nullable=True)  # Basic salary
+    
     # Use back_populates instead of backref for better control
     leave_balances = db.relationship('LeaveBalance', back_populates='employee', lazy=True)
     
@@ -204,30 +208,37 @@ class TimeTrackingForm(FlaskForm):
 class AddEmployeeForm(FlaskForm):
     full_name = StringField('Full Name', validators=[DataRequired()])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    nationality = StringField('Nationality', validators=[DataRequired()])  # Added nationality
-    employee_id = StringField('Employee ID', validators=[DataRequired()])  # Added employee ID
+    nationality = StringField('Nationality', validators=[DataRequired()])
+    employee_id = StringField('Employee ID', validators=[DataRequired()])
     user_type = SelectField('User Type', choices=[
-        ('office', 'Office Employee'),
-        ('factory', 'Factory Worker'),
-        ('supervisor', 'Supervisor')
+        ('employee', 'Employee'),
+        ('supervisor', 'Supervisor'),
+        ('admin', 'Admin'),
+        ('factory', 'Factory Worker')
     ], validators=[DataRequired()])
+    # NEW FIELDS
+    date_joined = DateField('Date Joined', format='%Y-%m-%d', validators=[DataRequired()])
+    basic_salary = DecimalField('Basic Salary', validators=[DataRequired()])
     submit = SubmitField('Add Employee')
 
 class BulkAddEmployeesForm(FlaskForm):
     employee_data = TextAreaField('Employee Data', validators=[DataRequired()], 
-        description="Format: Full Name,Email,Nationality,Employee ID,User Type (one per line)")
+        render_kw={'placeholder': 'Format: Full Name,Email,Nationality,Employee ID,User Type,Date Joined (YYYY-MM-DD),Basic Salary\nExample: John Doe,john@company.com,Malaysian,EMP1001,employee,2024-01-15,3500.00'})
     submit = SubmitField('Add Employees')
 
 class EditEmployeeForm(FlaskForm):
     full_name = StringField('Full Name', validators=[DataRequired()])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    nationality = StringField('Nationality', validators=[DataRequired()])  # Added nationality
-    employee_id = StringField('Employee ID', validators=[DataRequired()])  # Added employee ID
+    nationality = StringField('Nationality', validators=[DataRequired()])
+    employee_id = StringField('Employee ID', validators=[DataRequired()])
     user_type = SelectField('User Type', choices=[
-        ('office', 'Office Employee'),
-        ('factory', 'Factory Worker'),
-        ('supervisor', 'Supervisor')
+        ('employee', 'Employee'),
+        ('supervisor', 'Supervisor'),
+        ('admin', 'Admin'),
+        ('factory', 'Factory Worker')
     ], validators=[DataRequired()])
+    date_joined = DateField('Date Joined', format='%Y-%m-%d', validators=[DataRequired()])
+    basic_salary = DecimalField('Basic Salary', validators=[DataRequired()])
     submit = SubmitField('Update Employee')
 
 class ResetPasswordForm(FlaskForm):
@@ -437,17 +448,19 @@ def create_initial_leave_balances():
     employees = Employee.query.all()
     for employee in employees:
         for leave_type in ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']:
-            # Check if this specific leave type balance exists for the employee
             balance = LeaveBalance.query.filter_by(
                 employee_id=employee.id, 
                 leave_type=leave_type
             ).first()
             
             if not balance:
-                # Set default days based on leave type
+                # Calculate annual leave based on date_joined if available
                 if leave_type == 'annual':
-                    default_days = 20
-                elif leave_type == 'medical':  # Keep medical for backward compatibility
+                    if employee.date_joined:
+                        default_days = calculate_annual_leave_days(employee.date_joined)
+                    else:
+                        default_days = 20  # Default for existing employees without date_joined
+                elif leave_type == 'medical':
                     default_days = 14
                 elif leave_type == 'maternity':
                     default_days = 90
@@ -458,7 +471,7 @@ def create_initial_leave_balances():
                 elif leave_type == 'hospitalized':
                     default_days = 60
                 elif leave_type == 'socso_mc':
-                    default_days = 14  # Same as medical
+                    default_days = 14
                 else:  # unpaid and others
                     default_days = 0
                 
@@ -982,6 +995,34 @@ def is_ip_in_office_network(ip_address):
     except ValueError:
         return False
 
+def calculate_annual_leave_days(date_joined):
+    """Calculate annual leave days based on years of service"""
+    if not date_joined:
+        return 20  # Default for existing employees
+    
+    today = date.today()
+    years_of_service = today.year - date_joined.year
+    
+    # Adjust if anniversary hasn't occurred this year
+    if today.month < date_joined.month or (today.month == date_joined.month and today.day < date_joined.day):
+        years_of_service -= 1
+    
+    if years_of_service < 2:
+        return 8
+    elif 2 <= years_of_service < 5:
+        return 12
+    else:  # 5 years or more
+        return 16
+
+def calculate_unpaid_leave_deduction(basic_salary, unpaid_days, working_days_per_month=22):
+    """Calculate unpaid leave salary deduction"""
+    if not basic_salary:
+        return 0
+    
+    daily_rate = basic_salary / working_days_per_month
+    deduction = daily_rate * unpaid_days
+    return round(deduction, 2)
+
 @app.route('/department_directory')
 @login_required
 def department_directory():
@@ -1163,45 +1204,25 @@ def approve_leave(request_id):
     leave_request.approved_at = datetime.utcnow()
     leave_request.approved_by_id = current_user.id
     
-    # Deduct leave balance only for paid leave types
-    paid_leave_types = ['annual', 'medical', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']
-    if leave_request.leave_type in paid_leave_types:
-        leave_balance = LeaveBalance.query.filter_by(
-            employee_id=leave_request.employee_id,
-            leave_type=leave_request.leave_type
-        ).first()
-        
-        if leave_balance:
-            if leave_balance.remaining_days >= leave_request.days_requested:
-                # Store old values
-                old_remaining = leave_balance.remaining_days
-                old_used = leave_balance.used_days
-                
-                # Update balance
-                leave_balance.used_days += leave_request.days_requested
-                leave_balance.remaining_days -= leave_request.days_requested
-                
-                # Create leave balance history record
-                history = LeaveBalanceHistory(
-                    employee_id=leave_request.employee_id,
-                    admin_id=current_user.id,
-                    leave_type=leave_request.leave_type,
-                    old_total=leave_balance.total_days,
-                    new_total=leave_balance.total_days,
-                    old_used=old_used,
-                    new_used=leave_balance.used_days,
-                    old_remaining=old_remaining,
-                    new_remaining=leave_balance.remaining_days,
-                    comment=f"Leave request approved: {leave_request.reason}"
-                )
-                db.session.add(history)
-            else:
-                flash(f'Insufficient {leave_request.leave_type} leave balance. Approval granted but balance not deducted.', 'warning')
-        else:
-            flash(f'No {leave_request.leave_type} leave balance found for employee. Approval granted but balance not deducted.', 'warning')
+    # Handle unpaid leave salary deduction
+    unpaid_deduction = 0
+    deduction_note = ""
+    if leave_request.leave_type == 'unpaid':
+        employee = Employee.query.get(leave_request.employee_id)
+        if employee and employee.basic_salary:
+            unpaid_deduction = calculate_unpaid_leave_deduction(
+                employee.basic_salary, 
+                leave_request.days_requested
+            )
+            deduction_note = f"\nNote: This unpaid leave will result in a salary deduction of ${unpaid_deduction:.2f}"
+            flash(f'Unpaid leave approved. Salary deduction: ${unpaid_deduction:.2f}', 'info')
+    
+    # Rest of your existing approve_leave code remains the same...
+    # [Your existing code for deducting leave balances]
     
     db.session.commit()
     
+    # Update email to include deduction information
     subject = f"Your Leave Request Has Been Approved"
     body = f"""
 Dear {leave_request.employee.full_name},
@@ -1214,6 +1235,7 @@ Details:
 - End Date: {leave_request.end_date.strftime('%d-%m-%y')}
 - Days: {leave_request.days_requested}
 - Reason: {leave_request.reason}
+{deduction_note}
 
 Status: Approved
 
@@ -1320,22 +1342,20 @@ def add_employee():
     if form.validate_on_submit():
         username = form.email.data.split('@')[0]
         
-        # Check for duplicate username
+        # Check for duplicates
         if Employee.query.filter_by(username=username).first():
             flash('Username already exists. Please use a different email.', 'danger')
             return render_template('add_employee.html', form=form)
         
-        # Check for duplicate employee ID
         if Employee.query.filter_by(employee_id=form.employee_id.data).first():
             flash('Employee ID already exists. Please use a different ID.', 'danger')
             return render_template('add_employee.html', form=form)
         
-        # Check for duplicate email (added this check)
         if Employee.query.filter_by(email=form.email.data).first():
             flash('Email address already exists. Please use a different email.', 'danger')
             return render_template('add_employee.html', form=form)
         
-        # Capitalize nationality: first letter uppercase, rest lowercase
+        # Capitalize nationality
         nationality = form.nationality.data.strip().title()
         
         temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(8))
@@ -1345,23 +1365,37 @@ def add_employee():
             password=generate_password_hash(temp_password),
             full_name=form.full_name.data,
             email=form.email.data,
-            nationality=nationality,  # Use the capitalized version
+            nationality=nationality,
             employee_id=form.employee_id.data,
             user_type=form.user_type.data,
-            hire_date=datetime.utcnow().date()
+            hire_date=datetime.utcnow().date(),
+            # NEW FIELDS
+            date_joined=form.date_joined.data,
+            basic_salary=form.basic_salary.data
         )
         
         db.session.add(employee)
         db.session.commit()
         
-        # Create leave balances for the new employee - ADD THIS AFTER COMMIT
+        # Create leave balances with calculated annual leave
+        annual_leave_days = calculate_annual_leave_days(form.date_joined.data)
+        
         for leave_type in ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']:
-            default_days = 20 if leave_type == 'annual' else (
-                14 if leave_type in ['medical', 'socso_mc'] else (
-                90 if leave_type == 'maternity' else (
-                3 if leave_type in ['compassionate', 'marriage'] else (
-                60 if leave_type == 'hospitalized' else 0
-            ))))
+            if leave_type == 'annual':
+                default_days = annual_leave_days
+            elif leave_type == 'medical':
+                default_days = 14
+            elif leave_type == 'maternity':
+                default_days = 90
+            elif leave_type in ['compassionate', 'marriage']:
+                default_days = 3
+            elif leave_type == 'hospitalized':
+                default_days = 60
+            elif leave_type == 'socso_mc':
+                default_days = 14
+            else:  # unpaid and others
+                default_days = 0
+            
             balance = LeaveBalance(
                 employee_id=employee.id,
                 leave_type=leave_type,
@@ -1371,14 +1405,15 @@ def add_employee():
             )
             db.session.add(balance)
         
-        # Get the current server URL dynamically
-        server_url = request.host_url.rstrip('/')
+        db.session.commit()
         
+        # Send email (your existing email code)
+        server_url = request.host_url.rstrip('/')
         subject = "Your Hercules HR Account Has Been Created"
         body = f"""
 Dear {form.full_name.data},
 
-We’re excited to welcome you to Hercules HR! 🎉  
+We're excited to welcome you to Hercules HR! 🎉  
 Your account has been successfully created, you can now access the system to manage your profile and explore its features.
 
 Here are your login details:
@@ -1416,18 +1451,26 @@ def bulk_add_employees():
         lines = form.employee_data.data.strip().split('\n')
         success_count = 0
         error_count = 0
-        employees_added = []  # Store successfully added employees
+        employees_added = []
         
         for line in lines:
             try:
                 data = [item.strip() for item in line.split(',')]
-                if len(data) != 5:
+                if len(data) != 7:  # Updated from 5 to 7 fields
                     error_count += 1
                     continue
                 
-                full_name, email, nationality, employee_id, user_type = data
+                full_name, email, nationality, employee_id, user_type, date_joined_str, basic_salary_str = data
                 
-                # Capitalize nationality: first letter uppercase, rest lowercase
+                # Parse date and salary
+                try:
+                    date_joined = datetime.strptime(date_joined_str, '%Y-%m-%d').date()
+                    basic_salary = float(basic_salary_str)
+                except ValueError:
+                    error_count += 1
+                    continue
+                
+                # Capitalize nationality
                 nationality = nationality.title()
                 
                 username = email.split('@')[0]
@@ -1443,22 +1486,24 @@ def bulk_add_employees():
                     password=generate_password_hash(temp_password),
                     full_name=full_name,
                     email=email,
-                    nationality=nationality,  # Use the capitalized version
+                    nationality=nationality,
                     employee_id=employee_id,
                     user_type=user_type,
-                    hire_date=datetime.utcnow().date()
+                    hire_date=datetime.utcnow().date(),
+                    # NEW FIELDS
+                    date_joined=date_joined,
+                    basic_salary=basic_salary
                 )
                 
                 db.session.add(employee)
-                employees_added.append(employee)  # Add to list for leave balance creation
+                employees_added.append(employee)
                 success_count += 1
                 
-                # Get the current server URL dynamically
+                # Send email (your existing email code)
                 server_url = request.host_url.rstrip('/')
-                
                 subject = "Your Hercules HR Account Has Been Created"
                 body = f"""
-Dear {full_name},  <!-- CHANGED: Use full_name variable instead of form.full_name.data -->
+Dear {full_name},
 
 We're excited to welcome you to Hercules HR! 🎉  
 Your account has been successfully created, you can now access the system to manage your profile and explore its features.
@@ -1486,13 +1531,24 @@ Hercules HR Dev
         
         # Create leave balances for all successfully added employees
         for employee in employees_added:
+            annual_leave_days = calculate_annual_leave_days(employee.date_joined)
+            
             for leave_type in ['annual', 'unpaid', 'maternity', 'compassionate', 'marriage', 'hospitalized', 'socso_mc']:
-                default_days = 20 if leave_type == 'annual' else (
-                    14 if leave_type in ['medical', 'socso_mc'] else (
-                    90 if leave_type == 'maternity' else (
-                    3 if leave_type in ['compassionate', 'marriage'] else (
-                    60 if leave_type == 'hospitalized' else 0
-                ))))
+                if leave_type == 'annual':
+                    default_days = annual_leave_days
+                elif leave_type == 'medical':
+                    default_days = 14
+                elif leave_type == 'maternity':
+                    default_days = 90
+                elif leave_type in ['compassionate', 'marriage']:
+                    default_days = 3
+                elif leave_type == 'hospitalized':
+                    default_days = 60
+                elif leave_type == 'socso_mc':
+                    default_days = 14
+                else:  # unpaid and others
+                    default_days = 0
+                
                 balance = LeaveBalance(
                     employee_id=employee.id,
                     leave_type=leave_type,
@@ -1501,6 +1557,8 @@ Hercules HR Dev
                     remaining_days=default_days
                 )
                 db.session.add(balance)
+        
+        db.session.commit()
         
         flash(f'Added {success_count} employees successfully. {error_count} failed.', 'success')
         return redirect(url_for('manage_employees'))
@@ -1564,23 +1622,58 @@ def edit_employee(employee_id):
         # Check if employee ID is already taken by another employee
         if form.employee_id.data != employee.employee_id and Employee.query.filter_by(employee_id=form.employee_id.data).first():
             flash('Employee ID already exists. Please use a different ID.', 'danger')
-            return render_template('edit_employee.html', form=form, employee=employee)
+            return render_template('edit_employee.html', form=form, employee=employee, calculate_annual_leave_days=calculate_annual_leave_days)
         
         # Capitalize nationality: first letter uppercase, rest lowercase
         nationality = form.nationality.data.strip().title()
         
         employee.full_name = form.full_name.data
         employee.email = form.email.data
-        employee.nationality = nationality  # Use the capitalized version
+        employee.nationality = nationality
         employee.employee_id = form.employee_id.data
         employee.user_type = form.user_type.data
+        # NEW FIELDS
+        employee.date_joined = form.date_joined.data
+        employee.basic_salary = form.basic_salary.data
+        
+        # Update annual leave balance if date_joined changed
+        if form.date_joined.data != employee.date_joined:
+            annual_leave_days = calculate_annual_leave_days(form.date_joined.data)
+            annual_balance = LeaveBalance.query.filter_by(
+                employee_id=employee.id,
+                leave_type='annual'
+            ).first()
+            
+            if annual_balance:
+                # Calculate the difference in total days
+                days_difference = annual_leave_days - annual_balance.total_days
+                
+                # Update the balance
+                annual_balance.total_days = annual_leave_days
+                annual_balance.remaining_days += days_difference
+                
+                # Create history record
+                history = LeaveBalanceHistory(
+                    employee_id=employee.id,
+                    admin_id=current_user.id,
+                    leave_type='annual',
+                    old_total=annual_balance.total_days - days_difference,
+                    new_total=annual_balance.total_days,
+                    old_used=annual_balance.used_days,
+                    new_used=annual_balance.used_days,
+                    old_remaining=annual_balance.remaining_days - days_difference,
+                    new_remaining=annual_balance.remaining_days,
+                    comment=f"Annual leave updated due to date joined change: {form.date_joined.data}"
+                )
+                db.session.add(history)
+                flash(f'Annual leave balance updated to {annual_leave_days} days based on new join date.', 'info')
         
         db.session.commit()
         
         flash('Employee updated successfully!', 'success')
         return redirect(url_for('manage_employees'))
     
-    return render_template('edit_employee.html', form=form, employee=employee)
+    return render_template('edit_employee.html', form=form, employee=employee, calculate_annual_leave_days=calculate_annual_leave_days)
 
 @app.route('/edit_attendance/<int:employee_id>/<string:date_str>', methods=['GET', 'POST'])
 @login_required

@@ -69,6 +69,33 @@
                 </div>
             {% endif %}
         </div>
+
+        <!-- NEW FIELDS -->
+        <div style="margin-bottom: 15px;">
+            <label for="date_joined" style="display: block; margin-bottom: 5px;">Date Joined</label>
+            {{ form.date_joined(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;", type="date") }}
+            {% if form.date_joined.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.date_joined.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <small style="color: #666; font-size: 0.8rem;">Used to calculate annual leave entitlement</small>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label for="basic_salary" style="display: block; margin-bottom: 5px;">Basic Salary</label>
+            {{ form.basic_salary(class="form-control", style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;", type="number", step="0.01", min="0") }}
+            {% if form.basic_salary.errors %}
+                <div style="color: red; font-size: 0.9rem; margin-top: 5px;">
+                    {% for error in form.basic_salary.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <small style="color: #666; font-size: 0.8rem;">Used for unpaid leave salary calculations</small>
+        </div>
         
         <div style="text-align: center;">
             {{ form.submit(class="btn", style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); height: 44px;") }}
@@ -87,6 +114,17 @@
         transform: translateY(-2px);
         box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
         text-decoration: none;
+    }
+
+    .form-control:focus {
+        border-color: #4361ee;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.2);
+    }
+
+    small {
+        display: block;
+        margin-top: 4px;
     }
 </style>
 {% endblock %}
