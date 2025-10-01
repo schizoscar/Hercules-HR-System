@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Payroll Audit Trail{% endblock %}
+
+{% block header %}Payroll Audit Trail{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="glass" style="padding: 25px; border-radius: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Payroll Changes History</h3>
+            <a href="{{ url_for('payroll') }}" class="btn btn-primary">Back to Payroll</a>
+        </div>
+
+        {% if audit_entries %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: rgba(67, 97, 238, 0.1);">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Date & Time</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Employee</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Pay Period</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Action</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Old Value</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">New Value</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Changed By</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Comment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for audit in audit_entries %}
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            {{ audit.performed_at.strftime('%Y-%m-%d %H:%M') }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <strong>{{ audit.employee.full_name }}</strong><br>
+                            <small style="color: #666;">{{ audit.employee.employee_id }}</small>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            {{ audit.pay_period }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <span style="text-transform: capitalize;">{{ audit.action.replace('_', ' ') }}</span>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            {% if audit.old_value %}-RM {{ audit.old_value }}{% endif %}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #28a745;">
+                            {% if audit.new_value %}+RM {{ audit.new_value }}{% endif %}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            {{ audit.performer.full_name }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            {{ audit.comment or '-' }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 40px; color: #666;">
+            <p>No audit entries found for the selected filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

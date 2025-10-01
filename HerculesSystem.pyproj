@@ -42,6 +42,8 @@
     <Content Include="templates\edit_leave_balance.html" />
     <Content Include="templates\leave_balance_history.html" />
     <Content Include="templates\edit_attendance.html" />
+    <Content Include="templates\payroll.html" />
+    <Content Include="templates\payroll_audit.html" />
     <Content Include="templates\time_reports.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->

@@ -1,0 +1,1099 @@
+{% extends "base.html" %}
+
+{% block title %}Payroll Management{% endblock %}
+
+{% block header %}Payroll Management{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Payroll Controls -->
+    <div class="glass" style="padding: 25px; border-radius: 12px; margin-bottom: 25px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <h3 style="margin: 0;">Payroll for {{ current_period_display }}</h3>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn btn-warning" onclick="openEditCalculations()" style="padding: 10px 20px; font-size: 14px; line-height: 1.2;">
+                    Edit Calculations
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payroll Filters -->
+    <div class="glass" style="padding: 25px; border-radius: 12px; margin-bottom: 25px;">
+        <h4 style="margin-bottom: 20px;">Filter Payroll Data</h4>
+        
+        <form id="payrollFilterForm" method="GET" action="{{ url_for('payroll') }}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+            <div>
+                <label for="employee_search" style="display: block; margin-bottom: 5px; font-weight: 500;">Search Employee</label>
+                <input type="text" id="employee_search" name="employee_search" placeholder="Enter employee name..." 
+                       value="{{ employee_search }}" 
+                       style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;">
+            </div>
+            
+            <div>
+                <label for="month" style="display: block; margin-bottom: 5px; font-weight: 500;">Month</label>
+                <select id="month" name="month" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;">
+                    <option value="">All Months</option>
+                    {% for month in months %}
+                    <option value="{{ month.value }}" {% if filter_month == month.value %}selected{% endif %}>
+                        {{ month.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div>
+                <label for="year" style="display: block; margin-bottom: 5px; font-weight: 500;">Year</label>
+                <input type="number" id="year" name="year" placeholder="Enter year..." 
+                       value="{{ filter_year }}" 
+                       min="2000" max="2030"
+                       style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;">
+            </div>
+            
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button type="submit" class="btn btn-primary" style="padding: 10px 20px; font-size: 14px;">Apply Filters</button>
+                <a href="{{ url_for('payroll') }}" class="btn btn-secondary" style="padding: 10px 20px; font-size: 14px;">Clear</a>
+                <a href="{{ url_for('export_payroll', period=current_period) }}{% if employee_search or filter_month or filter_year %}?employee_search={{ employee_search | urlencode }}&month={{ filter_month }}&year={{ filter_year }}{% endif %}" 
+                   class="btn btn-success" style="padding: 10px 20px; font-size: 14px;">
+                    Export CSV
+                </a>
+            </div>
+        </form>
+        
+        <!-- Active Filters Display -->
+        {% if employee_search or filter_month or filter_year %}
+        <div style="margin-top: 15px; padding: 10px; background: rgba(67, 97, 238, 0.1); border-radius: 6px;">
+            <strong>Active Filters:</strong>
+            {% if employee_search %}
+            <span class="filter-tag">Employee: "{{ employee_search }}"</span>
+            {% endif %}
+            {% if filter_month %}
+            <span class="filter-tag">Month: 
+                {% for month in months %}
+                    {% if month.value == filter_month %}{{ month.name }}{% endif %}
+                {% endfor %}
+            </span>
+            {% endif %}
+            {% if filter_year %}
+            <span class="filter-tag">Year: {{ filter_year }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Payroll Summary -->
+    <div class="glass" style="padding: 25px; border-radius: 12px; margin-bottom: 25px;">
+        <h3 style="margin-bottom: 20px;">Payroll Summary</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+            <div class="summary-card">
+                <h4>Total Employees</h4>
+                <p class="summary-number">{{ payroll_data|length }}</p>
+            </div>
+            <div class="summary-card">
+                <h4>Total Basic Salary</h4>
+                <p class="summary-number">RM {{ "%.2f"|format(payroll_data|sum(attribute='basic_salary')) }}</p>
+            </div>
+            <div class="summary-card">
+                <h4>Total Deductions</h4>
+                <p class="summary-number">RM {{ "%.2f"|format(payroll_data|sum(attribute='total_deductions')) }}</p>
+            </div>
+            <div class="summary-card">
+                <h4>Total Net Salary</h4>
+                <p class="summary-number">RM {{ "%.2f"|format(payroll_data|sum(attribute='net_salary')) }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payroll Details Table -->
+    <div class="glass" style="padding: 25px; border-radius: 12px;">
+        <h3 style="margin-bottom: 20px;">Employee Payroll Details</h3>
+        
+        {% if payroll_data %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: rgba(67, 97, 238, 0.1);">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Employee</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Basic Salary</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Unpaid Leave</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">EPF</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">SOCSO</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">EIS</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Tax</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Total Deductions</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Net Salary</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Actions</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Adjustments</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payroll in payroll_data %}
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                            <strong>{{ payroll.employee_data.full_name }}</strong><br>
+                            <small style="color: #666;">{{ payroll.employee_data.employee_id }}</small><br>
+                            <small style="color: #888; font-size: 0.8rem;">{{ payroll.employee_data.nationality }}</small>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">
+                            RM {{ "%.2f"|format(payroll.basic_salary) }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            -RM {{ "%.2f"|format(payroll.unpaid_leave_deduction) }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            -RM {{ "%.2f"|format(payroll.epf_employee) }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            -RM {{ "%.2f"|format(payroll.socso_employee) }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            -RM {{ "%.2f"|format(payroll.eis_employee) }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            -RM {{ "%.2f"|format(payroll.tax_deduction) }}
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right; color: #dc3545;">
+                            <strong>-RM {{ "%.2f"|format(payroll.total_deductions) }}</strong>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">
+                            <strong style="color: #28a745;">RM {{ "%.2f"|format(payroll.net_salary) }}</strong>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">
+                            <button class="btn btn-sm btn-info details-btn" 
+                                    data-payroll='{{ payroll | tojson | safe }}'>
+                                Details
+                            </button>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">
+                            <button class="btn btn-sm btn-warning adjustments-btn" 
+                                    data-employee-id="{{ payroll.employee_data.id }}"
+                                    data-employee-name="{{ payroll.employee_data.full_name }}"
+                                    data-pay-period="{{ current_period }}"
+                                    onclick="openAdjustmentsModal(this)">
+                                {% if payroll.adjustments_count > 0 %}
+                                ⚙️ ({{ payroll.adjustments_count }})
+                                {% else %}
+                                ⚙️
+                                {% endif %}
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 40px; color: #666;">
+            <p>No payroll data available for the selected filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Payroll Details Modal -->
+<div id="payrollModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5);">
+    <div class="modal-content glass" style="background: white; padding: 25px; border-radius: 12px; position: relative; max-width: 600px; margin: 10% auto; max-height: 80vh; overflow-y: auto;">
+        <span class="close" onclick="closeModal('payrollModal')" style="position: absolute; right: 15px; top: 15px; font-size: 24px; cursor: pointer; color: #666;">&times;</span>
+        <h3>Payroll Details</h3>
+        <div id="payrollDetails"></div>
+    </div>
+</div>
+
+<!-- Edit Calculations Modal -->
+<div id="editCalculationsModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5);">
+    <div class="modal-content glass" style="background: white; padding: 25px; border-radius: 12px; position: relative; max-width: 700px; margin: 5% auto; max-height: 80vh; overflow-y: auto;">
+        <span class="close" onclick="closeModal('editCalculationsModal')" style="position: absolute; right: 15px; top: 15px; font-size: 24px; cursor: pointer; color: #666;">&times;</span>
+        <h3>Edit Payroll Calculations</h3>
+        <p style="color: #666; margin-bottom: 20px;">Customize which components to include in payroll calculations</p>
+        
+        <form id="calculationsForm">
+            <div style="margin-bottom: 25px;">
+                <h4 style="margin-bottom: 15px; color: #28a745;">Earnings Components</h4>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_overtime" id="include_overtime">
+                        <span class="checkmark"></span>
+                        Include Overtime Pay
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Overtime Hours × Overtime Rate</p>
+                        <label>Default Overtime Rate (RM/hour):
+                            <input type="number" name="overtime_rate" id="overtime_rate" step="0.01" min="0" value="15.00" style="width: 100px; margin-left: 10px;">
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_bonuses" id="include_bonuses">
+                        <span class="checkmark"></span>
+                        Include Bonuses
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Fixed amount per employee</p>
+                        <label>Default Bonus Amount (RM):
+                            <input type="number" name="bonus_amount" id="bonus_amount" step="0.01" min="0" value="0.00" style="width: 100px; margin-left: 10px;">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 25px;">
+                <h4 style="margin-bottom: 15px; color: #dc3545;">Deduction Components</h4>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_unpaid_leave" id="include_unpaid_leave">
+                        <span class="checkmark"></span>
+                        Include Unpaid Leave Deduction
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> (Basic Salary / Working Days) × Unpaid Leave Days</p>
+                        <label>Working Days per Month:
+                            <input type="number" name="working_days_per_month" id="working_days_per_month" step="1" min="20" max="31" value="26" style="width: 80px; margin-left: 10px;">
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_epf" id="include_epf">
+                        <span class="checkmark"></span>
+                        Include EPF Contribution
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Employee: 11% of basic salary, Employer: 13% of basic salary</p>
+                        <div style="display: flex; gap: 15px; margin-top: 8px;">
+                            <label>Employee Rate (%):
+                                <input type="number" name="epf_employee_rate" id="epf_employee_rate" step="0.01" min="0" max="100" value="11.00" style="width: 80px; margin-left: 5px;">
+                            </label>
+                            <label>Employer Rate (%):
+                                <input type="number" name="epf_employer_rate" id="epf_employer_rate" step="0.01" min="0" max="100" value="13.00" style="width: 80px; margin-left: 5px;">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_socso" id="include_socso">
+                        <span class="checkmark"></span>
+                        Include SOCSO Contribution
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Tiered rates based on salary brackets</p>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;">
+                            <div>
+                                <strong>Salary ≤ RM5,000</strong>
+                                <label>Employee:
+                                    <input type="number" name="socso_employee_low" id="socso_employee_low" step="0.01" min="0" value="0.50" style="width: 70px;">
+                                </label>
+                                <label>Employer:
+                                    <input type="number" name="socso_employer_low" id="socso_employer_low" step="0.01" min="0" value="0.70" style="width: 70px;">
+                                </label>
+                            </div>
+                            <div>
+                                <strong>Salary > RM5,000</strong>
+                                <label>Employee:
+                                    <input type="number" name="socso_employee_high" id="socso_employee_high" step="0.01" min="0" value="1.00" style="width: 70px;">
+                                </label>
+                                <label>Employer:
+                                    <input type="number" name="socso_employer_high" id="socso_employer_high" step="0.01" min="0" value="1.20" style="width: 70px;">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_eis" id="include_eis">
+                        <span class="checkmark"></span>
+                        Include EIS Contribution
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Employee: 0.5% of basic salary, Employer: 0.7% of basic salary</p>
+                        <div style="display: flex; gap: 15px; margin-top: 8px;">
+                            <label>Employee Rate (%):
+                                <input type="number" name="eis_employee_rate" id="eis_employee_rate" step="0.01" min="0" max="100" value="0.50" style="width: 80px; margin-left: 5px;">
+                            </label>
+                            <label>Employer Rate (%):
+                                <input type="number" name="eis_employer_rate" id="eis_employer_rate" step="0.01" min="0" max="100" value="0.70" style="width: 80px; margin-left: 5px;">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_tax" id="include_tax">
+                        <span class="checkmark"></span>
+                        Include Tax Deduction
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Progressive tax rates based on Malaysian tax brackets</p>
+                    </div>
+                </div>
+                
+                <div class="calculation-item">
+                    <label class="checkbox-container">
+                        <input type="checkbox" name="include_other_deductions" id="include_other_deductions">
+                        <span class="checkmark"></span>
+                        Include Other Deductions
+                    </label>
+                    <div class="calculation-details">
+                        <p><strong>Current Calculation:</strong> Fixed amount per employee</p>
+                        <label>Default Other Deductions (RM):
+                            <input type="number" name="other_deductions_amount" id="other_deductions_amount" step="0.01" min="0" value="0.00" style="width: 100px; margin-left: 10px;">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                <button type="button" class="btn btn-secondary" onclick="resetToDefaults()">Reset to Defaults</button>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('editCalculationsModal')">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="applyCalculationSettings()">Save Settings</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Individual Adjustments Modal -->
+<div id="adjustmentsModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5);">
+    <div class="modal-content glass" style="background: white; padding: 25px; border-radius: 12px; position: relative; max-width: 600px; margin: 5% auto; max-height: 80vh; overflow-y: auto;">
+        <span class="close" onclick="closeModal('adjustmentsModal')" style="position: absolute; right: 15px; top: 15px; font-size: 24px; cursor: pointer; color: #666;">&times;</span>
+        <h3>Individual Payroll Adjustments</h3>
+        <div id="adjustmentsContent">
+            <!-- Content will be loaded dynamically -->
+        </div>
+    </div>
+</div>
+
+<!-- Loading Spinner -->
+<div id="loadingSpinner" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5);">
+    <div class="modal-content glass" style="background: white; padding: 25px; border-radius: 12px; position: relative; max-width: 200px; margin: 20% auto; text-align: center;">
+        <div style="padding: 20px;">
+            <div class="spinner"></div>
+            <p style="margin-top: 15px;">Saving Settings...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .summary-card {
+        background: rgba(67, 97, 238, 0.05);
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid rgba(67, 97, 238, 0.1);
+    }
+
+    .summary-card h4 {
+        margin: 0 0 10px 0;
+        color: #333;
+        font-size: 1rem;
+    }
+
+    .summary-number {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #4361ee;
+    }
+
+    .dark-theme .summary-card h4 {
+        color: #e4e8f0;
+    }
+
+    .dark-theme .summary-number {
+        color: #4cc9f0;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        font-weight: 600;
+        color: #333;
+    }
+
+    .dark-theme th {
+        color: #e4e8f0;
+    }
+
+    td {
+        color: #333;
+    }
+
+    .dark-theme td {
+        color: #e4e8f0;
+    }
+
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+
+    .btn {
+        padding: 8px 16px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+    }
+
+    .btn-warning {
+        background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        color: white;
+    }
+
+    .btn-success {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+    }
+
+    .btn-info {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #4361ee 0%, #3a0ca3 100%);
+        color: white;
+    }
+
+    .btn-secondary {
+        background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        color: white;
+    }
+
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    /* Calculation Settings Styles */
+    .calculation-item {
+        background: rgba(0, 0, 0, 0.03);
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .dark-theme .calculation-item {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .calculation-details {
+        margin-top: 10px;
+        padding-left: 25px;
+        font-size: 0.9rem;
+        color: #666;
+    }
+
+    .dark-theme .calculation-details {
+        color: #adb5bd;
+    }
+
+    .calculation-details p {
+        margin: 5px 0;
+    }
+
+    .calculation-details label {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 15px;
+        margin-bottom: 5px;
+        font-size: 0.85rem;
+    }
+
+    .calculation-details input {
+        padding: 4px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: white;
+    }
+
+    .dark-theme .calculation-details input {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+        color: white;
+    }
+
+    /* Checkbox Styles */
+    .checkbox-container {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .checkbox-container input {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    .checkmark {
+        height: 18px;
+        width: 18px;
+        background-color: #eee;
+        border-radius: 3px;
+        margin-right: 10px;
+        position: relative;
+    }
+
+    .dark-theme .checkmark {
+        background-color: #555;
+    }
+
+    .checkbox-container input:checked ~ .checkmark {
+        background-color: #4361ee;
+    }
+
+    .checkmark:after {
+        content: "";
+        position: absolute;
+        display: none;
+    }
+
+    .checkbox-container input:checked ~ .checkmark:after {
+        display: block;
+    }
+
+    .checkbox-container .checkmark:after {
+        left: 6px;
+        top: 2px;
+        width: 5px;
+        height: 10px;
+        border: solid white;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+
+    .filter-tag {
+        display: inline-block;
+        background: rgba(67, 97, 238, 0.2);
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin: 0 5px;
+        font-size: 0.9rem;
+    }
+
+    .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #4361ee;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Modal backdrop */
+    .modal {
+        backdrop-filter: blur(5px);
+    }
+
+    .modal-content {
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Adjustments styles */
+    .adjustment-item {
+        background: rgba(0, 0, 0, 0.02);
+        padding: 10px;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: between;
+        align-items: center;
+    }
+
+    .adjustment-details {
+        flex-grow: 1;
+    }
+
+    .adjustment-amount {
+        font-weight: 600;
+        margin-right: 10px;
+    }
+
+    .adjustment-positive {
+        color: #28a745;
+    }
+
+    .adjustment-negative {
+        color: #dc3545;
+    }
+</style>
+
+<script>
+    // Global modal functions
+    function showPayrollDetails(payroll) {
+        console.log('Showing payroll details for:', payroll.employee_data.full_name);
+        const modal = document.getElementById('payrollModal');
+        const details = document.getElementById('payrollDetails');
+
+        if (!modal || !details) {
+            console.error('Modal elements not found');
+            alert('Error: Could not open details modal');
+            return;
+        }
+
+        // Calculate total earnings
+        const totalEarnings = parseFloat(payroll.basic_salary) +
+            parseFloat(payroll.overtime_pay) +
+            parseFloat(payroll.bonuses);
+
+        // Calculate EPF percentage for display
+        const epfPercentage = payroll.basic_salary > 0 ? (payroll.epf_employee / payroll.basic_salary * 100).toFixed(1) : '0.0';
+
+        const html = `
+            <div style="margin-bottom: 20px;">
+                <h4>${payroll.employee_data.full_name} (${payroll.employee_data.employee_id})</h4>
+                <p><strong>Pay Period:</strong> {{ current_period_display }}</p>
+                <p><strong>Nationality:</strong> ${payroll.employee_data.nationality}</p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div>
+                    <h5>Earnings</h5>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Basic Salary:</span>
+                        <span>RM ${parseFloat(payroll.basic_salary).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Overtime Pay:</span>
+                        <span>RM ${parseFloat(payroll.overtime_pay).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Bonuses:</span>
+                        <span>RM ${parseFloat(payroll.bonuses).toFixed(2)}</span>
+                    </div>
+                    <hr>
+                    <div style="display: flex; justify-content: space-between; font-weight: 600;">
+                        <span>Total Earnings:</span>
+                        <span>RM ${totalEarnings.toFixed(2)}</span>
+                    </div>
+                </div>
+                
+                <div>
+                    <h5>Deductions</h5>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Unpaid Leave:</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.unpaid_leave_deduction).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>EPF (${epfPercentage}%):</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.epf_employee).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>SOCSO:</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.socso_employee).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>EIS:</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.eis_employee).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Tax:</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.tax_deduction).toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Other Deductions:</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.other_deductions).toFixed(2)}</span>
+                    </div>
+                    <hr>
+                    <div style="display: flex; justify-content: space-between; font-weight: 600;">
+                        <span>Total Deductions:</span>
+                        <span style="color: #dc3545;">-RM ${parseFloat(payroll.total_deductions).toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="background: rgba(40, 167, 69, 0.1); padding: 15px; border-radius: 6px; text-align: center;">
+                <h4 style="margin: 0; color: #28a745;">Net Salary: RM ${parseFloat(payroll.net_salary).toFixed(2)}</h4>
+            </div>
+        `;
+
+        details.innerHTML = html;
+        modal.style.display = 'block';
+    }
+
+    function openEditCalculations() {
+        console.log('Opening edit calculations modal');
+        const modal = document.getElementById('editCalculationsModal');
+        if (!modal) {
+            console.error('Edit calculations modal not found');
+            alert('Error: Could not open settings modal');
+            return;
+        }
+        modal.style.display = 'block';
+    }
+
+    function openAdjustmentsModal(button) {
+        const employeeId = button.getAttribute('data-employee-id');
+        const employeeName = button.getAttribute('data-employee-name');
+        const payPeriod = button.getAttribute('data-pay-period');
+
+        const modal = document.getElementById('adjustmentsModal');
+        const content = document.getElementById('adjustmentsContent');
+
+        // Load adjustments content
+        content.innerHTML = `
+            <div style="margin-bottom: 20px;">
+                <h4>${employeeName}</h4>
+                <p><strong>Pay Period:</strong> {{ current_period_display }}</p>
+            </div>
+            
+            <div id="currentAdjustments" style="margin-bottom: 20px;">
+                <h5>Current Adjustments</h5>
+                <div id="adjustmentsList" style="max-height: 200px; overflow-y: auto;">
+                    Loading...
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h5>Add New Adjustment</h5>
+                <form id="addAdjustmentForm">
+                    <input type="hidden" name="employee_id" value="${employeeId}">
+                    <input type="hidden" name="pay_period" value="${payPeriod}">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Type</label>
+                            <select name="adjustment_type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="bonus">Bonus</option>
+                                <option value="overtime">Overtime Pay</option>
+                                <option value="other_deduction">Other Deduction</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500;">Amount (RM)</label>
+                            <input type="number" name="amount" step="0.01" min="0" 
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" required>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500;">Description</label>
+                        <textarea name="description" placeholder="Reason for adjustment..." 
+                                  style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-height: 60px;"></textarea>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" style="padding: 8px 16px;">Add Adjustment</button>
+                </form>
+            </div>
+            
+            <div style="border-top: 1px solid #eee; padding-top: 15px;">
+                <a href="{{ url_for('payroll_audit_trail') }}?employee_id=${employeeId}&pay_period=${payPeriod}" 
+                   class="btn btn-info" style="padding: 8px 16px;">
+                    View Audit Trail
+                </a>
+            </div>
+        `;
+
+        modal.style.display = 'block';
+        loadEmployeeAdjustments(employeeId, payPeriod);
+
+        // Add form submit handler
+        document.getElementById('addAdjustmentForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            addEmployeeAdjustment(employeeId, payPeriod);
+        });
+    }
+
+    function closeModal(modalId) {
+        console.log('Closing modal:', modalId);
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    // Wait for DOM to be fully loaded
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log('DOM loaded - attaching event listeners');
+
+        // Add event listeners to all details buttons
+        const detailsButtons = document.querySelectorAll('.details-btn');
+        console.log(`Found ${detailsButtons.length} details buttons`);
+
+        detailsButtons.forEach(button => {
+            button.addEventListener('click', function () {
+                console.log('Details button clicked');
+                try {
+                    const payrollJson = this.getAttribute('data-payroll');
+                    console.log('Raw payroll data:', payrollJson);
+                    const payrollData = JSON.parse(payrollJson);
+                    console.log('Payroll data parsed successfully');
+                    showPayrollDetails(payrollData);
+                } catch (error) {
+                    console.error('Error parsing payroll data:', error);
+                    alert('Error loading payroll details. Please try again.');
+                }
+            });
+        });
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function (event) {
+            const modals = document.querySelectorAll('.modal');
+            modals.forEach(modal => {
+                if (event.target === modal) {
+                    closeModal(modal.id);
+                }
+            });
+        });
+
+        // Load calculation settings from server
+        loadCalculationSettings();
+    });
+
+    // Load calculation settings from server
+    async function loadCalculationSettings() {
+        try {
+            const response = await fetch('/payroll/settings');
+            const settings = await response.json();
+
+            console.log('Loaded settings:', settings);
+
+            // Apply settings to form
+            Object.keys(settings).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        // Handle boolean values properly
+                        const value = settings[key];
+                        element.checked = value === true || value === 'true' || value === '1';
+                        console.log(`Checkbox ${key}:`, value, '->', element.checked);
+                    } else {
+                        element.value = settings[key];
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error loading settings:', error);
+            alert('Error loading payroll settings');
+        }
+    }
+
+    // Save and apply calculation settings
+    async function applyCalculationSettings() {
+        const form = document.getElementById('calculationsForm');
+        const formData = new FormData(form);
+        const settings = {};
+
+        // Collect all form values
+        for (let [key, value] of formData.entries()) {
+            settings[key] = value;
+        }
+
+        // Handle checkboxes separately
+        const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            settings[checkbox.name] = checkbox.checked;
+        });
+
+        // Show loading spinner
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        if (loadingSpinner) {
+            loadingSpinner.style.display = 'block';
+        }
+
+        try {
+            const response = await fetch('/payroll/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(settings)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert('Payroll settings updated successfully!');
+                closeModal('editCalculationsModal');
+                // Reload the page to apply new settings
+                window.location.reload();
+            } else {
+                alert('Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            alert('Error saving payroll settings');
+        } finally {
+            if (loadingSpinner) {
+                loadingSpinner.style.display = 'none';
+            }
+        }
+    }
+
+    // Reset to default settings
+    function resetToDefaults() {
+        if (confirm('Are you sure you want to reset all settings to defaults?')) {
+            const defaultSettings = {
+                'include_overtime': true,
+                'include_bonuses': true,
+                'include_unpaid_leave': true,
+                'include_epf': true,
+                'include_socso': true,
+                'include_eis': true,
+                'include_tax': true,
+                'include_other_deductions': true,
+                'overtime_rate': '15.00',
+                'bonus_amount': '0.00',
+                'epf_employee_rate': '11.00',
+                'epf_employer_rate': '13.00',
+                'socso_employee_low': '0.50',
+                'socso_employer_low': '0.70',
+                'socso_employee_high': '1.00',
+                'socso_employer_high': '1.20',
+                'eis_employee_rate': '0.50',
+                'eis_employer_rate': '0.70',
+                'other_deductions_amount': '0.00',
+                'working_days_per_month': '26'
+            };
+
+            // Apply default settings to form
+            Object.keys(defaultSettings).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        element.checked = defaultSettings[key];
+                    } else {
+                        element.value = defaultSettings[key];
+                    }
+                }
+            });
+
+            alert('Settings reset to defaults. Click "Save Settings" to apply.');
+        }
+    }
+
+    // Individual Adjustments Functions
+    async function loadEmployeeAdjustments(employeeId, payPeriod) {
+        try {
+            const adjustmentsList = document.getElementById('adjustmentsList');
+            adjustmentsList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Loading adjustments...</div>';
+
+            // Fetch adjustments from server
+            const response = await fetch(`/payroll/adjustments/${employeeId}/${payPeriod}`);
+            if (response.ok) {
+                const adjustments = await response.json();
+
+                if (adjustments.length === 0) {
+                    adjustmentsList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No adjustments found.</div>';
+                    return;
+                }
+
+                let adjustmentsHtml = '';
+                adjustments.forEach(adjustment => {
+                    const isPositive = adjustment.adjustment_type !== 'other_deduction';
+                    adjustmentsHtml += `
+                        <div class="adjustment-item">
+                            <div class="adjustment-details">
+                                <div style="font-weight: 500; text-transform: capitalize;">${adjustment.adjustment_type.replace('_', ' ')}</div>
+                                <div style="font-size: 0.9rem; color: #666;">${adjustment.description || 'No description'}</div>
+                            </div>
+                            <div class="adjustment-amount ${isPositive ? 'adjustment-positive' : 'adjustment-negative'}">
+                                ${isPositive ? '+' : '-'}RM ${parseFloat(adjustment.amount).toFixed(2)}
+                            </div>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAdjustment(${adjustment.id})" style="margin-left: 10px;">×</button>
+                        </div>
+                    `;
+                });
+
+                adjustmentsList.innerHTML = adjustmentsHtml;
+            } else {
+                adjustmentsList.innerHTML = '<div style="color: #dc3545;">Error loading adjustments</div>';
+            }
+
+        } catch (error) {
+            console.error('Error loading adjustments:', error);
+            document.getElementById('adjustmentsList').innerHTML = '<div style="color: #dc3545;">Error loading adjustments</div>';
+        }
+    }
+
+    async function addEmployeeAdjustment(employeeId, payPeriod) {
+        const form = document.getElementById('addAdjustmentForm');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch('/payroll/adjustments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert('Adjustment added successfully!');
+                form.reset();
+                loadEmployeeAdjustments(employeeId, payPeriod);
+                // Reload page to reflect changes
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                alert('Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error adding adjustment:', error);
+            alert('Error adding adjustment');
+        }
+    }
+
+    async function deleteAdjustment(adjustmentId) {
+        if (!confirm('Are you sure you want to delete this adjustment?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/payroll/adjustments/${adjustmentId}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert('Adjustment deleted successfully!');
+                // Reload the current adjustments list
+                const employeeId = document.querySelector('input[name="employee_id"]').value;
+                const payPeriod = document.querySelector('input[name="pay_period"]').value;
+                loadEmployeeAdjustments(employeeId, payPeriod);
+                // Reload page to reflect changes
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                alert('Error: ' + result.message);
+            }
+        } catch (error) {
+            console.error('Error deleting adjustment:', error);
+            alert('Error deleting adjustment');
+        }
+    }
+</script>
+{% endblock %}

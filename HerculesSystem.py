@@ -11,6 +11,7 @@ from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, date, time
+from decimal import Decimal
 from math import ceil
 import io 
 import os
@@ -155,6 +156,7 @@ HR System
 
 # Database Models
 class Employee(UserMixin, db.Model):
+    __tablename__ = 'employee'  # Explicitly set to 'employees'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
@@ -194,6 +196,88 @@ class TimeTracking(db.Model):
     status = db.Column(db.String(20), nullable=True)    # in/out office
     ip_address = db.Column(db.String(45), nullable=True)
     employee = db.relationship('Employee', backref=db.backref('time_entries', lazy=True))
+
+class Payroll(db.Model):
+    __tablename__ = 'payroll'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    pay_period = db.Column(db.String(20), nullable=False)
+    basic_salary = db.Column(db.Numeric(10, 2), nullable=False)
+    overtime_hours = db.Column(db.Numeric(5, 2), default=0)
+    overtime_pay = db.Column(db.Numeric(10, 2), default=0)
+    bonuses = db.Column(db.Numeric(10, 2), default=0)
+    unpaid_leave_deduction = db.Column(db.Numeric(10, 2), default=0)
+    epf_employee = db.Column(db.Numeric(10, 2), default=0)
+    epf_employer = db.Column(db.Numeric(10, 2), default=0)
+    socso_employee = db.Column(db.Numeric(10, 2), default=0)
+    socso_employer = db.Column(db.Numeric(10, 2), default=0)
+    eis_employee = db.Column(db.Numeric(10, 2), default=0)
+    eis_employer = db.Column(db.Numeric(10, 2), default=0)
+    tax_deduction = db.Column(db.Numeric(10, 2), default=0)
+    other_deductions = db.Column(db.Numeric(10, 2), default=0)
+    total_deductions = db.Column(db.Numeric(10, 2), default=0)  # Add this field
+    net_salary = db.Column(db.Numeric(10, 2), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at = db.Column(db.DateTime)
+    
+    employee = db.relationship('Employee', backref='payrolls')
+
+class PayrollSettings(db.Model):
+    __tablename__ = 'payroll_settings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    setting_name = db.Column(db.String(100), unique=True, nullable=False)
+    setting_value = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('employee.id'))
+
+class PayrollComponent(db.Model):
+    __tablename__ = 'payroll_components'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    component_type = db.Column(db.String(20), nullable=False)  # 'earning' or 'deduction'
+    is_active = db.Column(db.Boolean, default=True)
+    calculation_method = db.Column(db.String(50))  # 'percentage', 'fixed', 'tiered'
+    default_value = db.Column(db.Numeric(10, 2), default=0)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class EmployeePayrollAdjustment(db.Model):
+    __tablename__ = 'employee_payroll_adjustments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    pay_period = db.Column(db.String(20), nullable=False)  # YYYY-MM format
+    adjustment_type = db.Column(db.String(50), nullable=False)  # 'bonus', 'overtime', 'deduction', etc.
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    description = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('employee.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    employee = db.relationship('Employee', foreign_keys=[employee_id], backref='payroll_adjustments')
+    creator = db.relationship('Employee', foreign_keys=[created_by])
+
+class PayrollAuditTrail(db.Model):
+    __tablename__ = 'payroll_audit_trail'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    pay_period = db.Column(db.String(20), nullable=False)
+    action = db.Column(db.String(100), nullable=False)  # 'bonus_added', 'overtime_adjusted', etc.
+    field_name = db.Column(db.String(100), nullable=False)
+    old_value = db.Column(db.String(255))
+    new_value = db.Column(db.String(255))
+    comment = db.Column(db.Text)
+    performed_by = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    performed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    employee = db.relationship('Employee', foreign_keys=[employee_id], backref='payroll_audits')
+    performer = db.relationship('Employee', foreign_keys=[performed_by])
 
 # Forms
 class LoginForm(FlaskForm):
@@ -1014,14 +1098,735 @@ def calculate_annual_leave_days(date_joined):
     else:  # 5 years or more
         return 16
 
-def calculate_unpaid_leave_deduction(basic_salary, unpaid_days, working_days_per_month=22):
-    """Calculate unpaid leave salary deduction"""
-    if not basic_salary:
-        return 0
+def calculate_unpaid_leave_deduction(salary, unpaid_days):
+    """Calculate unpaid leave deduction based on working days"""
+    settings = get_payroll_settings()
     
-    daily_rate = basic_salary / working_days_per_month
-    deduction = daily_rate * unpaid_days
-    return round(deduction, 2)
+    # Safely get working days - handle the case where it might be a boolean
+    working_days_value = settings.get('working_days_per_month', 26)
+    
+    # Convert to Decimal safely
+    if isinstance(working_days_value, bool):
+        working_days = Decimal('26')  # Default value if it's a boolean
+    else:
+        try:
+            working_days = Decimal(str(working_days_value))
+        except:
+            working_days = Decimal('26')  # Fallback to default
+    
+    daily_rate = salary / working_days
+    return round(daily_rate * Decimal(str(unpaid_days)), 2)
+
+@app.route('/payroll')
+@login_required
+def payroll():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to view payroll.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        print("Starting payroll calculation...")  # Debug
+        
+        # Get current month and year for payroll period
+        current_date = datetime.now()
+        current_period = current_date.strftime('%Y-%m')
+        current_period_display = current_date.strftime('%B %Y')
+        
+        # Get filter parameters
+        employee_search = request.args.get('employee_search', '')
+        filter_month = request.args.get('month', type=int)
+        filter_year = request.args.get('year', type=int)
+        
+        print(f"Filters - search: {employee_search}, month: {filter_month}, year: {filter_year}")  # Debug
+        
+        # Build query for employees
+        employees_query = Employee.query
+        
+        # Apply filters
+        if employee_search:
+            employees_query = employees_query.filter(Employee.full_name.ilike(f'%{employee_search}%'))
+        
+        # Get all employees with their basic salary
+        employees_query = employees_query.order_by(Employee.full_name.asc())
+        employees = employees_query.all()
+        
+        print(f"Found {len(employees)} employees")  # Debug
+        
+        # Calculate payroll for each employee
+        payroll_data = []
+        period_display = current_period_display  # Initialize with current period
+        
+        for i, employee in enumerate(employees):
+            print(f"Processing employee {i+1}/{len(employees)}: {employee.full_name}")  # Debug
+            
+            if employee.basic_salary:
+                # Determine which period to use for calculation
+                if filter_month and filter_year:
+                    pay_period = f"{filter_year}-{filter_month:02d}"
+                    period_display = f"{datetime(filter_year, filter_month, 1).strftime('%B %Y')}"
+                else:
+                    pay_period = current_period
+                    period_display = current_period_display
+                
+                print(f"Calculating payroll for period: {pay_period}")  # Debug
+                
+                try:
+                    payroll_info = calculate_monthly_payroll(employee, pay_period)
+                    payroll_info['employee_data'] = {
+                        'id': employee.id,
+                        'full_name': employee.full_name,
+                        'employee_id': employee.employee_id,
+                        'basic_salary': float(employee.basic_salary) if employee.basic_salary else 0,
+                        'nationality': employee.nationality
+                    }
+                    payroll_data.append(payroll_info)
+                    print(f"Successfully calculated payroll for {employee.full_name}")  # Debug
+                except Exception as e:
+                    print(f"Error calculating payroll for {employee.full_name}: {str(e)}")  # Debug
+                    # Continue with other employees even if one fails
+                    continue
+        
+        print(f"Successfully calculated payroll for {len(payroll_data)} employees")  # Debug
+        
+        # Generate month names for the filter dropdown
+        months = []
+        for i in range(1, 13):
+            months.append({
+                'value': i,
+                'name': datetime(2023, i, 1).strftime('%B')
+            })
+        
+        # Generate years for the filter dropdown
+        years = list(range(2020, 2031))
+        
+        return render_template('payroll.html', 
+                             payroll_data=payroll_data,
+                             current_period=current_period,
+                             current_period_display=period_display,
+                             employees=employees,
+                             months=months,
+                             years=years,
+                             filter_month=filter_month,
+                             filter_year=filter_year,
+                             employee_search=employee_search)
+    
+    except Exception as e:
+        print(f"Critical error in payroll route: {str(e)}")  # Debug
+        import traceback
+        traceback.print_exc()
+        flash(f'Error loading payroll: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/payroll/adjustments', methods=['POST'])
+@login_required
+def add_payroll_adjustment():
+    if current_user.user_type != 'admin':
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+    
+    try:
+        data = request.get_json()
+        employee_id = data.get('employee_id')
+        pay_period = data.get('pay_period')
+        adjustment_type = data.get('adjustment_type')
+        amount = data.get('amount')
+        description = data.get('description', '')
+        
+        # Create adjustment
+        adjustment = EmployeePayrollAdjustment(
+            employee_id=employee_id,
+            pay_period=pay_period,
+            adjustment_type=adjustment_type,
+            amount=amount,
+            description=description,
+            created_by=current_user.id
+        )
+        
+        db.session.add(adjustment)
+        
+        # Create audit trail entry
+        audit = PayrollAuditTrail(
+            employee_id=employee_id,
+            pay_period=pay_period,
+            action=f'{adjustment_type}_added',
+            field_name=adjustment_type,
+            old_value='0.00',
+            new_value=str(amount),
+            comment=description,
+            performed_by=current_user.id
+        )
+        
+        db.session.add(audit)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Adjustment added successfully'})
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/payroll/adjustments/<int:employee_id>/<pay_period>')
+@login_required
+def get_employee_adjustments(employee_id, pay_period):
+    if current_user.user_type != 'admin':
+        return jsonify([]), 403
+    
+    adjustments = EmployeePayrollAdjustment.query.filter_by(
+        employee_id=employee_id,
+        pay_period=pay_period
+    ).all()
+    
+    adjustments_data = []
+    for adjustment in adjustments:
+        adjustments_data.append({
+            'id': adjustment.id,
+            'adjustment_type': adjustment.adjustment_type,
+            'amount': float(adjustment.amount),
+            'description': adjustment.description,
+            'created_at': adjustment.created_at.isoformat()
+        })
+    
+    return jsonify(adjustments_data)
+
+@app.route('/payroll/adjustments/<int:adjustment_id>', methods=['DELETE'])
+@login_required
+def delete_payroll_adjustment(adjustment_id):
+    if current_user.user_type != 'admin':
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+    
+    try:
+        adjustment = EmployeePayrollAdjustment.query.get_or_404(adjustment_id)
+        
+        # Create audit trail entry before deletion
+        audit = PayrollAuditTrail(
+            employee_id=adjustment.employee_id,
+            pay_period=adjustment.pay_period,
+            action=f'{adjustment.adjustment_type}_removed',
+            field_name=adjustment.adjustment_type,
+            old_value=str(adjustment.amount),
+            new_value='0.00',
+            comment=f'Removed adjustment: {adjustment.description}',
+            performed_by=current_user.id
+        )
+        
+        db.session.add(audit)
+        db.session.delete(adjustment)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Adjustment removed successfully'})
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/payroll/audit-trail')
+@login_required
+def payroll_audit_trail():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to view audit trail.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get filter parameters
+    employee_id = request.args.get('employee_id', type=int)
+    pay_period = request.args.get('pay_period', '')
+    
+    # Build query
+    audit_query = PayrollAuditTrail.query.join(Employee, PayrollAuditTrail.employee_id == Employee.id)
+    
+    if employee_id:
+        audit_query = audit_query.filter(PayrollAuditTrail.employee_id == employee_id)
+    
+    if pay_period:
+        audit_query = audit_query.filter(PayrollAuditTrail.pay_period == pay_period)
+    
+    audit_entries = audit_query.order_by(PayrollAuditTrail.performed_at.desc()).all()
+    
+    return render_template('payroll_audit.html', audit_entries=audit_entries)
+
+@app.route('/payroll/generate', methods=['POST'])
+@login_required
+def generate_payroll():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to generate payroll.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    pay_period = request.form.get('pay_period')
+    
+    # Get all employees with basic salary
+    employees = Employee.query.filter(Employee.basic_salary.isnot(None)).all()
+    
+    payroll_records = []
+    for employee in employees:
+        payroll_info = calculate_monthly_payroll(employee, pay_period)
+        
+        # Calculate total_deductions
+        total_deductions = (payroll_info['unpaid_leave_deduction'] + 
+                           payroll_info['epf_employee'] + 
+                           payroll_info['socso_employee'] + 
+                           payroll_info['eis_employee'] + 
+                           payroll_info['tax_deduction'] + 
+                           payroll_info['other_deductions'])
+        
+        # Create payroll record
+        payroll = Payroll(
+            employee_id=employee.id,
+            pay_period=pay_period,
+            basic_salary=payroll_info['basic_salary'],
+            overtime_hours=payroll_info['overtime_hours'],
+            overtime_pay=payroll_info['overtime_pay'],
+            bonuses=payroll_info['bonuses'],
+            unpaid_leave_deduction=payroll_info['unpaid_leave_deduction'],
+            epf_employee=payroll_info['epf_employee'],
+            epf_employer=payroll_info['epf_employer'],
+            socso_employee=payroll_info['socso_employee'],
+            socso_employer=payroll_info['socso_employer'],
+            eis_employee=payroll_info['eis_employee'],
+            eis_employer=payroll_info['eis_employer'],
+            tax_deduction=payroll_info['tax_deduction'],
+            other_deductions=payroll_info['other_deductions'],
+            total_deductions=total_deductions,  
+            net_salary=payroll_info['net_salary'],
+            status='processed',
+            processed_at=datetime.utcnow()
+        )
+        payroll_records.append(payroll)
+    
+    # Add all records to database
+    db.session.add_all(payroll_records)
+    db.session.commit()
+    
+    flash(f'Payroll generated successfully for {pay_period}!', 'success')
+    return redirect(url_for('payroll'))
+
+@app.route('/payroll/history')
+@login_required
+def payroll_history():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to view payroll history.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get all payroll records grouped by period
+    payroll_periods = db.session.query(Payroll.pay_period).distinct().order_by(Payroll.pay_period.desc()).all()
+    
+    selected_period = request.args.get('period')
+    payroll_data = []
+    
+    if selected_period:
+        # Get payroll for specific period
+        payroll_data = Payroll.query.filter_by(pay_period=selected_period).join(Employee).order_by(Employee.full_name.asc()).all()
+    
+    return render_template('payroll_history.html',
+                         payroll_periods=payroll_periods,
+                         selected_period=selected_period,
+                         payroll_data=payroll_data)
+
+@app.route('/payroll/export/<period>')
+@login_required
+def export_payroll(period):
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to export payroll.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get filter parameters from request
+    employee_search = request.args.get('employee_search', '')
+    filter_month = request.args.get('month', type=int)
+    filter_year = request.args.get('year', type=int)
+    
+    # Build query based on filters (same logic as payroll route)
+    employees_query = Employee.query
+    
+    if employee_search:
+        employees_query = employees_query.filter(Employee.full_name.ilike(f'%{employee_search}%'))
+    
+    employees_query = employees_query.order_by(Employee.full_name.asc())
+    employees = employees_query.all()
+    
+    # Calculate payroll data with same filters
+    payroll_data = []
+    for employee in employees:
+        if employee.basic_salary:
+            # Use the same period logic as the payroll page
+            if filter_month and filter_year:
+                pay_period = f"{filter_year}-{filter_month:02d}"
+            else:
+                pay_period = period
+            
+            payroll_info = calculate_monthly_payroll(employee, pay_period)
+            payroll_info['employee_data'] = {
+                'id': employee.id,
+                'full_name': employee.full_name,
+                'employee_id': employee.employee_id,
+                'basic_salary': float(employee.basic_salary) if employee.basic_salary else 0,
+                'nationality': employee.nationality
+            }
+            payroll_data.append(payroll_info)
+    
+    # Create CSV content with filtered data
+    csv_content = "Employee Name,Employee ID,Nationality,Basic Salary,Overtime Hours,Overtime Pay,Bonuses,Unpaid Leave Deduction,EPF Employee,SOCSO Employee,EIS Employee,Tax Deduction,Other Deductions,Total Deductions,Net Salary\n"
+    
+    for payroll in payroll_data:
+        csv_content += f'"{payroll["employee_data"]["full_name"]}",'
+        csv_content += f'"{payroll["employee_data"]["employee_id"]}",'
+        csv_content += f'"{payroll["employee_data"]["nationality"]}",'
+        csv_content += f'{payroll["basic_salary"]},'
+        csv_content += f'{payroll["overtime_hours"]},'
+        csv_content += f'{payroll["overtime_pay"]},'
+        csv_content += f'{payroll["bonuses"]},'
+        csv_content += f'{payroll["unpaid_leave_deduction"]},'
+        csv_content += f'{payroll["epf_employee"]},'
+        csv_content += f'{payroll["socso_employee"]},'
+        csv_content += f'{payroll["eis_employee"]},'
+        csv_content += f'{payroll["tax_deduction"]},'
+        csv_content += f'{payroll["other_deductions"]},'
+        csv_content += f'{payroll["total_deductions"]},'
+        csv_content += f'{payroll["net_salary"]}\n'
+    
+    # Create filename with filter info
+    filename = f"payroll_{period}"
+    if employee_search:
+        filename += f"_search_{employee_search[:20]}"
+    if filter_month:
+        filename += f"_month_{filter_month}"
+    if filter_year:
+        filename += f"_year_{filter_year}"
+    filename += ".csv"
+    
+    response = make_response(csv_content)
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-type'] = 'text/csv'
+    
+    return response
+def safe_decimal_convert(value, default=0):
+    """Safely convert a value to Decimal, handling various types"""
+    if isinstance(value, bool):
+        return Decimal(str(default))
+    try:
+        return Decimal(str(value))
+    except:
+        return Decimal(str(default))
+
+def calculate_monthly_payroll(employee, pay_period):
+    """Calculate monthly payroll for an employee with database settings and individual adjustments"""
+    try:
+        basic_salary = employee.basic_salary or Decimal('0')
+        
+        # Get calculation settings from database
+        settings = get_payroll_settings()
+        
+        # Initialize all components to 0
+        overtime_pay = Decimal('0')
+        bonuses = Decimal('0')
+        unpaid_deduction = Decimal('0')
+        epf_employee = Decimal('0')
+        epf_employer = Decimal('0')
+        socso_employee = Decimal('0')
+        socso_employer = Decimal('0')
+        eis_employee = Decimal('0')
+        eis_employer = Decimal('0')
+        tax_deduction = Decimal('0')
+        other_deductions = Decimal('0')
+        overtime_hours = Decimal('0')
+        
+        # Get individual adjustments for this employee and period
+        adjustments = EmployeePayrollAdjustment.query.filter_by(
+            employee_id=employee.id,
+            pay_period=pay_period
+        ).all()
+        
+        # Apply individual adjustments
+        individual_bonus = Decimal('0')
+        individual_overtime = Decimal('0')
+        individual_other_deductions = Decimal('0')
+        
+        for adjustment in adjustments:
+            if adjustment.adjustment_type == 'bonus':
+                individual_bonus += adjustment.amount
+            elif adjustment.adjustment_type == 'overtime':
+                individual_overtime += adjustment.amount
+            elif adjustment.adjustment_type == 'other_deduction':
+                individual_other_deductions += adjustment.amount
+        
+        # Calculate components based on settings
+        if settings.get('include_unpaid_leave', True):
+            unpaid_deduction = calculate_unpaid_leave_for_period(employee.id, pay_period)
+        
+        # Check if employee is Malaysian for SOCSO
+        is_malaysian = employee.nationality and employee.nationality.lower() in ['malaysian', 'malaysia']
+        
+        if settings.get('include_epf', True):
+            epf_rate_employee = safe_decimal_convert(settings.get('epf_employee_rate', 11.0)) / Decimal('100')
+            epf_rate_employer = safe_decimal_convert(settings.get('epf_employer_rate', 13.0)) / Decimal('100')
+            epf_employee = round(basic_salary * epf_rate_employee, 2)
+            epf_employer = round(basic_salary * epf_rate_employer, 2)
+        
+        if settings.get('include_socso', True) and is_malaysian:
+            if basic_salary <= Decimal('5000'):
+                socso_employee = safe_decimal_convert(settings.get('socso_employee_low', 0.50))
+                socso_employer = safe_decimal_convert(settings.get('socso_employer_low', 0.70))
+            else:
+                socso_employee = safe_decimal_convert(settings.get('socso_employee_high', 1.00))
+                socso_employer = safe_decimal_convert(settings.get('socso_employer_high', 1.20))
+        
+        if settings.get('include_eis', True) and is_malaysian:
+            eis_rate_employee = safe_decimal_convert(settings.get('eis_employee_rate', 0.5)) / Decimal('100')
+            eis_rate_employer = safe_decimal_convert(settings.get('eis_employer_rate', 0.7)) / Decimal('100')
+            eis_employee = round(basic_salary * eis_rate_employee, 2)
+            eis_employer = round(basic_salary * eis_rate_employer, 2)
+        
+        if settings.get('include_tax', True):
+            tax_deduction = calculate_tax_deduction(basic_salary)
+        
+        # Apply individual adjustments to calculations
+        if settings.get('include_overtime', True):
+            overtime_rate = safe_decimal_convert(settings.get('overtime_rate', 15.00))
+            calculated_overtime_hours = calculate_overtime_hours(employee.id, pay_period)
+            calculated_overtime_pay = calculated_overtime_hours * overtime_rate
+            overtime_pay = calculated_overtime_pay + individual_overtime
+            overtime_hours = calculated_overtime_hours + (individual_overtime / overtime_rate if overtime_rate > 0 else Decimal('0'))
+        
+        if settings.get('include_bonuses', True):
+            default_bonus = safe_decimal_convert(settings.get('bonus_amount', 0.00))
+            bonuses = default_bonus + individual_bonus
+        
+        if settings.get('include_other_deductions', True):
+            default_other_deductions = safe_decimal_convert(settings.get('other_deductions_amount', 0.00))
+            other_deductions = default_other_deductions + individual_other_deductions
+        
+        # Calculate total deductions and net salary
+        total_deductions = (unpaid_deduction + epf_employee + socso_employee + 
+                           eis_employee + tax_deduction + other_deductions)
+        
+        total_earnings = basic_salary + overtime_pay + bonuses
+        net_salary = total_earnings - total_deductions
+        
+        return {
+            'basic_salary': float(basic_salary),
+            'overtime_hours': float(overtime_hours),
+            'overtime_pay': float(overtime_pay),
+            'bonuses': float(bonuses),
+            'unpaid_leave_deduction': float(unpaid_deduction),
+            'epf_employee': float(epf_employee),
+            'epf_employer': float(epf_employer),
+            'socso_employee': float(socso_employee),
+            'socso_employer': float(socso_employer),
+            'eis_employee': float(eis_employee),
+            'eis_employer': float(eis_employer),
+            'tax_deduction': float(tax_deduction),
+            'other_deductions': float(other_deductions),
+            'total_deductions': float(total_deductions),
+            'net_salary': float(net_salary),
+            'is_malaysian': is_malaysian,
+            'individual_adjustments': {
+                'bonus': float(individual_bonus),
+                'overtime': float(individual_overtime),
+                'other_deductions': float(individual_other_deductions)
+            },
+            'adjustments_count': len(adjustments)
+        }
+        
+    except Exception as e:
+        print(f"Error in calculate_monthly_payroll for {employee.full_name}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Return basic structure on error
+        return {
+            'basic_salary': 0,
+            'overtime_hours': 0,
+            'overtime_pay': 0,
+            'bonuses': 0,
+            'unpaid_leave_deduction': 0,
+            'epf_employee': 0,
+            'epf_employer': 0,
+            'socso_employee': 0,
+            'socso_employer': 0,
+            'eis_employee': 0,
+            'eis_employer': 0,
+            'tax_deduction': 0,
+            'other_deductions': 0,
+            'total_deductions': 0,
+            'net_salary': 0,
+            'is_malaysian': False,
+            'individual_adjustments': {'bonus': 0, 'overtime': 0, 'other_deductions': 0},
+            'adjustments_count': 0
+        }
+
+def calculate_overtime_hours(employee_id, pay_period):
+    """Calculate overtime hours for an employee in a pay period"""
+    # Implement your overtime calculation logic here
+    # This is a placeholder - you'll need to track overtime in your system
+    return Decimal('0')
+
+def calculate_unpaid_leave_deduction(salary, unpaid_days):
+    """Calculate unpaid leave deduction based on working days"""
+    settings = get_payroll_settings()
+    working_days = Decimal(str(settings.get('working_days_per_month', 26)))
+    daily_rate = salary / working_days
+    return round(daily_rate * Decimal(str(unpaid_days)), 2)
+
+@app.route('/payroll/settings', methods=['GET', 'POST'])
+@login_required
+def payroll_settings():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to access payroll settings.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        try:
+            settings_data = request.get_json()
+            
+            # Update or create each setting
+            for key, value in settings_data.items():
+                # Convert boolean values to 'true'/'false' strings for consistent storage
+                if isinstance(value, bool):
+                    storage_value = 'true' if value else 'false'
+                else:
+                    storage_value = str(value)
+                
+                setting = PayrollSettings.query.filter_by(setting_name=key).first()
+                if setting:
+                    setting.setting_value = storage_value
+                    setting.updated_at = datetime.utcnow()
+                    setting.updated_by = current_user.id
+                else:
+                    setting = PayrollSettings(
+                        setting_name=key,
+                        setting_value=storage_value,
+                        updated_by=current_user.id
+                    )
+                    db.session.add(setting)
+            
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Payroll settings updated successfully!'})
+        
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'message': f'Error updating settings: {str(e)}'}), 500
+    
+    # GET request - return current settings
+    settings = PayrollSettings.query.all()
+    settings_dict = {s.setting_name: s.setting_value for s in settings}
+    
+    # Return default settings if none exist
+    if not settings_dict:
+        settings_dict = get_default_payroll_settings()
+        # Save default settings to database
+        for key, value in settings_dict.items():
+            setting = PayrollSettings(
+                setting_name=key,
+                setting_value=str(value),
+                updated_by=current_user.id
+            )
+            db.session.add(setting)
+        db.session.commit()
+    
+    return jsonify(settings_dict)
+
+def get_default_payroll_settings():
+    """Return default payroll calculation settings"""
+    return {
+        'include_overtime': 'true',
+        'include_bonuses': 'true',
+        'include_unpaid_leave': 'true',
+        'include_epf': 'true',
+        'include_socso': 'true',
+        'include_eis': 'true',
+        'include_tax': 'true',
+        'include_other_deductions': 'true',
+        'overtime_rate': '15.00',
+        'bonus_amount': '0.00',
+        'epf_employee_rate': '11.00',
+        'epf_employer_rate': '13.00',
+        'socso_employee_low': '0.50',
+        'socso_employer_low': '0.70',
+        'socso_employee_high': '1.00',
+        'socso_employer_high': '1.20',
+        'eis_employee_rate': '0.50',
+        'eis_employer_rate': '0.70',
+        'other_deductions_amount': '0.00',
+        'working_days_per_month': '26'
+    }
+
+def get_payroll_settings():
+    """Get payroll calculation settings from database"""
+    settings = PayrollSettings.query.all()
+    if not settings:
+        return get_default_payroll_settings()
+    
+    settings_dict = {}
+    for setting in settings:
+        value = setting.setting_value
+        
+        # Handle boolean settings
+        if setting.setting_name.startswith('include_'):
+            settings_dict[setting.setting_name] = value.lower() in ('true', '1', 'yes')
+        # Handle numeric settings
+        elif any(keyword in setting.setting_name for keyword in ['_rate', '_amount', '_low', '_high', '_days']):
+            try:
+                settings_dict[setting.setting_name] = float(value)
+            except (ValueError, TypeError):
+                # Get default value from default settings
+                default_settings = get_default_payroll_settings()
+                settings_dict[setting.setting_name] = float(default_settings.get(setting.setting_name, 0))
+        else:
+            settings_dict[setting.setting_name] = value
+    
+    return settings_dict
+
+def calculate_unpaid_leave_for_period(employee_id, pay_period):
+    """Calculate unpaid leave deduction for a specific pay period"""
+    # Parse pay period (YYYY-MM)
+    year, month = map(int, pay_period.split('-'))
+    
+    # Get unpaid leave requests for this period
+    unpaid_leaves = LeaveRequest.query.filter(
+        LeaveRequest.employee_id == employee_id,
+        LeaveRequest.leave_type == 'unpaid',
+        LeaveRequest.status == 'approved',
+        db.extract('year', LeaveRequest.start_date) == year,
+        db.extract('month', LeaveRequest.start_date) == month
+    ).all()
+    
+    total_unpaid_days = sum(leave.days_requested for leave in unpaid_leaves)
+    
+    # Get employee basic salary
+    employee = Employee.query.get(employee_id)
+    if employee and employee.basic_salary:
+        return calculate_unpaid_leave_deduction(employee.basic_salary, total_unpaid_days)
+    
+    return Decimal('0')
+
+# Statutory calculation helpers (Malaysia)
+def calculate_socso_employee(salary):
+    """Calculate SOCSO contribution for employee"""
+    if salary <= Decimal('5000'):
+        return Decimal('0.50')  # Simplified amount
+    return Decimal('1.00')
+
+def calculate_socso_employer(salary):
+    """Calculate SOCSO contribution for employer"""
+    if salary <= Decimal('5000'):
+        return Decimal('0.70')  # Simplified amount
+    return Decimal('1.20')
+
+def calculate_eis_employee(salary):
+    """Calculate EIS contribution for employee"""
+    return round(salary * Decimal('0.005'), 2)  # 0.5%
+
+def calculate_eis_employer(salary):
+    """Calculate EIS contribution for employer"""
+    return round(salary * Decimal('0.007'), 2)  # 0.7%
+
+def calculate_tax_deduction(salary):
+    """Simplified tax calculation (implement proper Malaysian tax brackets)"""
+    annual_salary = salary * Decimal('12')
+    
+    if annual_salary <= Decimal('5000'):
+        return Decimal('0')
+    elif annual_salary <= Decimal('20000'):
+        return round((annual_salary - Decimal('5000')) * Decimal('0.01') / Decimal('12'), 2)
+    elif annual_salary <= Decimal('35000'):
+        return round((Decimal('15000') * Decimal('0.01') + (annual_salary - Decimal('20000')) * Decimal('0.03')) / Decimal('12'), 2)
+    else:
+        return round((Decimal('15000') * Decimal('0.01') + Decimal('15000') * Decimal('0.03') + (annual_salary - Decimal('35000')) * Decimal('0.06')) / Decimal('12'), 2)
 
 @app.route('/department_directory')
 @login_required
