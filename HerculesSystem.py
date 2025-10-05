@@ -71,7 +71,7 @@ app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Office IP network (adjust to your office's IP range)
+# Office IP network (adjust to office's IP range)
 app.config['OFFICE_NETWORK'] = '192.168.0.0/16'
 
 def send_email(to_email, subject, body):
@@ -1116,6 +1116,89 @@ def calculate_unpaid_leave_deduction(salary, unpaid_days):
     
     daily_rate = salary / working_days
     return round(daily_rate * Decimal(str(unpaid_days)), 2)
+
+@app.route('/admin/reset_all_passwords')
+@login_required
+def reset_all_passwords():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to reset passwords.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get all active employees
+    employees = Employee.query.all()
+    server_url = request.host_url.rstrip('/')
+    
+    reset_count = 0
+    email_success_count = 0
+    email_failed_count = 0
+    
+    for employee in employees:
+        try:
+            # Generate temporary password
+            characters = string.ascii_letters + string.digits
+            temp_password = ''.join(random.choice(characters) for i in range(10))
+            employee.password = generate_password_hash(temp_password)
+            
+            # Commit each password change immediately
+            db.session.commit()
+            reset_count += 1
+            
+            # Send email
+            subject = "Hercules HR System Update - New Login Details"
+            body = f"""
+Dear {employee.full_name},
+
+The Hercules HR system has been migrated to a new machine to optimize resource usage and improve stability. As a result, the server IP address has changed.
+Your password has been reset for security purposes. Please find your updated login details below:
+
+🔗 New System URL: {server_url}
+👤 Username: {employee.username}  
+🔐 Temporary Password: {temp_password}  
+
+Next steps:
+1. Use the NEW URL above to access the system
+2. Log in with your temporary password
+3. Change your password immediately after first login
+
+⚠️ Please note: the system is only accessible within the office while connected to the company Wi-Fi.
+Thank you for your cooperation.
+
+Best regards,  
+Hercules HR Department
+"""
+            
+            email_sent = send_email(employee.email, subject, body)
+            
+            if email_sent:
+                email_success_count += 1
+                print(f"✓ Email sent to {employee.email}")
+            else:
+                email_failed_count += 1
+                print(f"✗ Failed to send email to {employee.email}")
+                
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error processing {employee.email}: {str(e)}")
+            email_failed_count += 1
+            continue
+    
+    # Final flash message with summary
+    if reset_count > 0:
+        flash_message = f"""
+        Password reset completed!
+        • {reset_count} passwords reset
+        • {email_success_count} emails sent successfully
+        • {email_failed_count} emails failed
+        """
+        
+        if email_failed_count > 0:
+            flash(flash_message, 'warning')
+        else:
+            flash(flash_message, 'success')
+    else:
+        flash('No employees found to reset passwords.', 'warning')
+    
+    return redirect(url_for('dashboard'))
 
 @app.route('/payroll')
 @login_required
