@@ -45,6 +45,16 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
+# Office location for geolocation tracking (replace with your actual coordinates)
+OFFICE_LATITUDE = 3.12225
+OFFICE_LONGITUDE = 101.57789
+OFFICE_RADIUS_KM = 0.1  # 100 meters radius
+
+# Add to your app config
+app.config['OFFICE_LATITUDE'] = OFFICE_LATITUDE
+app.config['OFFICE_LONGITUDE'] = OFFICE_LONGITUDE
+app.config['OFFICE_RADIUS_KM'] = OFFICE_RADIUS_KM
+
 @app.after_request
 def add_security_headers(response):
     response.headers['Permissions-Policy'] = 'geolocation=()'
@@ -910,6 +920,7 @@ def log_error():
 @login_required
 def time_tracking():
     form = TimeTrackingForm()
+    
     if form.validate_on_submit():
         action_type = request.form.get('action_type')
         now = datetime.now(MYT)  # Use MYT timezone
@@ -918,8 +929,23 @@ def time_tracking():
         address = request.form.get('address')
         ip_address = request.remote_addr
 
-        # Determine status based on IP address
-        status = 'in_office' if is_ip_in_office_network(ip_address) else 'out_of_office'
+        # Convert latitude/longitude to float if provided, else None
+        try:
+            latitude = float(latitude) if latitude else None
+            longitude = float(longitude) if longitude else None
+        except (ValueError, TypeError):
+            latitude = None
+            longitude = None
+
+        # SMART STATUS DETERMINATION: Use geolocation if available, otherwise fallback to IP
+        if latitude and longitude:
+            # Use precise geolocation coordinates
+            status = 'in_office' if is_in_office(latitude, longitude) else 'out_of_office'
+            location_source = "geolocation"
+        else:
+            # Fallback to IP-based detection when location is denied/unavailable
+            status = 'in_office' if is_ip_in_office_network(ip_address) else 'out_of_office'
+            location_source = "IP"
 
         # Validate state for clock_out and lunch actions
         latest_clock_in = TimeTracking.query.filter(
@@ -962,8 +988,8 @@ def time_tracking():
                     employee_id=current_user.id,
                     action_type='lunch_end',
                     timestamp=now,
-                    latitude=latitude if latitude else None,
-                    longitude=longitude if longitude else None,
+                    latitude=latitude,
+                    longitude=longitude,
                     address=address if address else 'Unknown',
                     ip_address=ip_address,
                     status=status
@@ -1005,8 +1031,8 @@ def time_tracking():
             employee_id=current_user.id,
             action_type=action_type,
             timestamp=now,
-            latitude=latitude if latitude else None,
-            longitude=longitude if longitude else None,
+            latitude=latitude,
+            longitude=longitude,
             address=address if address else 'Unknown',
             ip_address=ip_address,
             status=status
@@ -1029,13 +1055,67 @@ def time_tracking():
             
             db.session.commit()
             
-            flash(f'Successfully {action_type.replace("_", " ")}!', 'success')
+            # Smart success message based on location source
+            if location_source == "geolocation":
+                location_info = " (location verified)"
+            else:
+                location_info = " (general location)"
+                
+            flash(f'Successfully {action_type.replace("_", " ")}{location_info}!', 'success')
+            
         except Exception as e:
             db.session.rollback()
             flash(f'Error during {action_type.replace("_", " ")}: {str(e)}', 'danger')
     else:
         flash('Invalid form submission.', 'danger')
+    
     return redirect(url_for('dashboard'))
+
+def is_in_office(latitude, longitude, accuracy=None):
+    """Check if coordinates are within office boundaries using geolocation."""
+    if not latitude or not longitude:
+        return False
+    
+    try:
+        # Office coordinates (replace with your actual office coordinates)
+        OFFICE_LATITUDE = 3.12225  # Your office latitude
+        OFFICE_LONGITUDE = 101.57789  # Your office longitude
+        
+        # Office radius in kilometers
+        OFFICE_RADIUS_KM = 0.1  # 100 meters radius
+        
+        # Calculate distance using Haversine formula
+        from math import radians, sin, cos, sqrt, atan2
+        
+        lat1 = radians(OFFICE_LATITUDE)
+        lon1 = radians(OFFICE_LONGITUDE)
+        lat2 = radians(float(latitude))
+        lon2 = radians(float(longitude))
+        
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        distance_km = 6371 * c  # Earth radius in km
+        
+        # Consider accuracy margin
+        accuracy_margin = (accuracy or 50) / 1000  # Convert meters to km
+        
+        return distance_km <= (OFFICE_RADIUS_KM + accuracy_margin)
+        
+    except (ValueError, TypeError) as e:
+        print(f"Error calculating office proximity: {e}")
+        return False
+
+def is_ip_in_office_network(ip_address):
+    """Check if the IP address is within the office network range."""
+    try:
+        ip = ipaddress.ip_address(ip_address)
+        office_network = ipaddress.ip_network(app.config['OFFICE_NETWORK'], strict=False)
+        return ip in office_network
+    except ValueError:
+        return False
 
 def can_perform_time_action(employee, action_type):
     """Check if employee can perform the requested time action"""
@@ -1070,13 +1150,138 @@ def can_perform_time_action(employee, action_type):
     
     return False, 'Invalid action.'
 
-def is_ip_in_office_network(ip_address):
-    """Check if the IP address is within the office network range."""
+@app.route('/geolocation')
+@login_required
+def geolocation_page():
+    """Serve a same-origin iframe that can access geolocation with better UX"""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Geolocation</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {
+                margin: 0;
+                padding: 20px;
+                font-family: Arial, sans-serif;
+                background: transparent;
+                color: #333;
+            }
+            .location-message {
+                text-align: center;
+                font-size: 14px;
+                line-height: 1.4;
+            }
+            .success { color: #28a745; }
+            .error { color: #dc3545; }
+            .info { color: #17a2b8; }
+        </style>
+    </head>
+    <body>
+        <div id="status" class="location-message info">
+            🔄 Requesting location access...
+        </div>
+
+        <script>
+            function sendGeolocationToParent(coords, error = null) {
+                window.parent.postMessage({
+                    type: error ? 'geolocation_error' : 'geolocation_success',
+                    coords: coords,
+                    error: error
+                }, window.location.origin);
+            }
+
+            function updateStatus(message, type = 'info') {
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = message;
+                statusEl.className = `location-message ${type}`;
+            }
+
+            // Try to get location with user-friendly messages
+            if (navigator.geolocation) {
+                updateStatus('📍 Please allow location access for time tracking...', 'info');
+                
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        updateStatus('✅ Location access granted!', 'success');
+                        sendGeolocationToParent({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy,
+                            timestamp: new Date().toISOString()
+                        });
+                    },
+                    function(error) {
+                        let errorMessage, userMessage;
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = 'Location access denied by user';
+                                userMessage = '❌ Location access denied. Time tracking will work without precise location.';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = 'Location information unavailable';
+                                userMessage = '❌ Location unavailable. Time tracking will work without precise location.';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = 'Location request timed out';
+                                userMessage = '⏰ Location request timed out. Time tracking will work without precise location.';
+                                break;
+                            default:
+                                errorMessage = 'Unknown geolocation error';
+                                userMessage = '❌ Location error. Time tracking will work without precise location.';
+                        }
+                        updateStatus(userMessage, 'error');
+                        sendGeolocationToParent(null, errorMessage);
+                    },
+                    {
+                        enableHighAccuracy: false,  // Changed to false for better acceptance
+                        timeout: 10000,
+                        maximumAge: 300000  // 5 minutes cache
+                    }
+                );
+            } else {
+                updateStatus('❌ Geolocation not supported by your browser', 'error');
+                sendGeolocationToParent(null, 'Geolocation not supported by browser');
+            }
+        </script>
+    </body>
+    </html>
+    """
+
+def is_in_office(latitude, longitude, accuracy=None):
+    """Check if coordinates are within office boundaries using geolocation."""
+    if not latitude or not longitude:
+        return False
+    
     try:
-        ip = ipaddress.ip_address(ip_address)
-        office_network = ipaddress.ip_network(app.config['OFFICE_NETWORK'], strict=False)
-        return ip in office_network
-    except ValueError:
+        # Get office coordinates from config
+        OFFICE_LATITUDE = app.config['OFFICE_LATITUDE']
+        OFFICE_LONGITUDE = app.config['OFFICE_LONGITUDE']
+        OFFICE_RADIUS_KM = app.config['OFFICE_RADIUS_KM']
+        
+        # Calculate distance using Haversine formula
+        from math import radians, sin, cos, sqrt, atan2
+        
+        lat1 = radians(OFFICE_LATITUDE)
+        lon1 = radians(OFFICE_LONGITUDE)
+        lat2 = radians(float(latitude))
+        lon2 = radians(float(longitude))
+        
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        distance_km = 6371 * c  # Earth radius in km
+        
+        # Consider accuracy margin
+        accuracy_margin = (accuracy or 50) / 1000  # Convert meters to km
+        
+        return distance_km <= (OFFICE_RADIUS_KM + accuracy_margin)
+        
+    except (ValueError, TypeError) as e:
+        print(f"Error calculating office proximity: {e}")
         return False
 
 def calculate_annual_leave_days(date_joined):

@@ -248,174 +248,72 @@
         const longitudeField = document.getElementById('longitude');
         const addressField = document.getElementById('address');
 
-        console.log('DOM loaded. Elements found:', {
-            timeButtons: timeButtons.length,
-            form: !!form,
-            actionTypeField: !!actionTypeField,
-            latitudeField: !!latitudeField,
-            longitudeField: !!longitudeField,
-            addressField: !!addressField
-        });
-
         // Check for CSRF token
         const csrfToken = document.querySelector('input[name="csrf_token"]');
-        if (!csrfToken) {
-            console.error('CSRF token not found in form');
-            alert('Form configuration error: CSRF token missing. Please contact support.');
-            return;
-        } else {
-            console.log('CSRF token found:', csrfToken.value);
-        }
+        if (!csrfToken) return;
 
-        // Check for multiple action_type inputs
-        const actionTypeInputs = form.querySelectorAll('input[name="action_type"]');
-        if (actionTypeInputs.length > 1) {
-            console.warn('Multiple action_type inputs found:', actionTypeInputs.length);
-            for (let i = 1; i < actionTypeInputs.length; i++) {
-                actionTypeInputs[i].remove();
-            }
-        }
-
-        // Check geolocation support
-        if (!navigator.geolocation) {
-            console.error('Geolocation not supported by browser');
-            alert('Geolocation is not supported by your browser. Time tracking will proceed without location data.');
-            timeButtons.forEach(button => button.disabled = true);
-            return;
-        }
-
-        // Attach event listeners to buttons
+        // Direct geolocation following MDN documentation
         timeButtons.forEach(button => {
             button.addEventListener('click', function (e) {
                 e.preventDefault();
                 const actionType = this.getAttribute('data-action');
-                console.log('Button clicked, action:', actionType);
-
-                if (!actionTypeField || !form || !latitudeField || !longitudeField || !addressField) {
-                    console.error('Missing elements:', {
-                        actionTypeField: !!actionTypeField,
-                        form: !!form,
-                        latitudeField: !!latitudeField,
-                        longitudeField: !!longitudeField,
-                        addressField: !!addressField
-                    });
-                    alert('An error occurred: Form elements not found. Please contact support.');
-                    return;
-                }
 
                 // Show loading state
                 const originalHTML = this.innerHTML;
                 this.innerHTML = '<span class="btn-icon">⏳</span><span class="btn-text">Getting location...</span>';
                 this.disabled = true;
 
-                // Get geolocation
-                navigator.geolocation.getCurrentPosition(
-                    position => {
-                        console.log('Geolocation success:', {
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            accuracy: position.coords.accuracy
-                        });
+                // Direct geolocation call (no iframe)
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        // Success callback
+                        function (position) {
+                            console.log('Geolocation success:', position.coords);
 
-                        // Set form values
-                        actionTypeField.value = actionType;
-                        latitudeField.value = position.coords.latitude;
-                        longitudeField.value = position.coords.longitude;
+                            // Set form values
+                            actionTypeField.value = actionType;
+                            latitudeField.value = position.coords.latitude;
+                            longitudeField.value = position.coords.longitude;
 
-                        // Reverse geocoding
-                        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`)
-                            .then(response => {
-                                if (!response.ok) {
-                                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                                }
-                                return response.json();
-                            })
-                            .then(data => {
-                                console.log('Geocoding success:', { address: data.display_name || 'Unknown' });
-                                addressField.value = data.display_name || 'Unknown location';
-                                submitForm(form, this, originalHTML);
-                            })
-                            .catch(error => {
-                                console.error('Geocoding error:', error.message);
-                                addressField.value = 'Location lookup failed';
-                                submitForm(form, this, originalHTML);
-                            });
-                    },
-                    error => {
-                        console.error('Geolocation error:', { code: error.code, message: error.message });
-                        let errorMessage = 'Error getting location: ';
-                        switch (error.code) {
-                            case error.PERMISSION_DENIED:
-                                errorMessage += 'Permission denied. Please allow location access.';
-                                break;
-                            case error.POSITION_UNAVAILABLE:
-                                errorMessage += 'Position unavailable. Ensure location services are enabled.';
-                                break;
-                            case error.TIMEOUT:
-                                errorMessage += 'Request timed out. Try again in a better signal area.';
-                                break;
-                            default:
-                                errorMessage += `Unknown error (Code ${error.code}).`;
-                                break;
+                            // Get address
+                            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`)
+                                .then(response => response.json())
+                                .then(data => {
+                                    addressField.value = data.display_name || 'Unknown location';
+                                    form.submit();
+                                })
+                                .catch(error => {
+                                    addressField.value = 'Address lookup failed';
+                                    form.submit();
+                                });
+                        },
+                        // Error callback
+                        function (error) {
+                            console.log('Geolocation error:', error);
+
+                            // Proceed without location
+                            actionTypeField.value = actionType;
+                            latitudeField.value = '';
+                            longitudeField.value = '';
+                            addressField.value = 'Location unavailable';
+                            form.submit();
+                        },
+                        // Options following MDN examples
+                        {
+                            enableHighAccuracy: false,
+                            timeout: 10000,
+                            maximumAge: 300000  // 5 minutes cache
                         }
-                        alert(`${errorMessage} Proceeding without location data.`);
-                        actionTypeField.value = actionType;
-                        latitudeField.value = '';
-                        longitudeField.value = '';
-                        addressField.value = 'Location unavailable';
-                        submitForm(form, this, originalHTML);
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 8000,
-                        maximumAge: 0
-                    }
-                );
+                    );
+                } else {
+                    // Geolocation not supported
+                    actionTypeField.value = actionType;
+                    latitudeField.value = '';
+                    longitudeField.value = '';
+                    addressField.value = 'Geolocation not supported';
+                    form.submit();
+                }
             });
-        });
-
-        function submitForm(form, button, originalHTML) {
-            try {
-                const formData = new FormData(form);
-                console.log('Form data before submission:', Object.fromEntries(formData));
-                console.log('Attempting native form submission...');
-                form.submit();
-            } catch (error) {
-                console.error('Error in form submission:', error);
-                alert('An error occurred while submitting the form. Please try again or contact support.');
-                button.innerHTML = originalHTML;
-                button.disabled = false;
-
-                // Fallback to XMLHttpRequest
-                console.log('Falling back to XMLHttpRequest...');
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', form.action, true);
-                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                xhr.onreadystatechange = function () {
-                    if (xhr.readyState === XMLHttpRequest.DONE) {
-                        console.log('XHR status:', xhr.status, 'Response:', xhr.responseText);
-                        if (xhr.status === 200 || xhr.status === 302) {
-                            console.log('Submission successful, reloading page...');
-                            window.location.reload();
-                        } else {
-                            console.error('XHR failed:', xhr.status, xhr.responseText);
-                            alert('Form submission failed. Please try again or contact support.');
-                            button.innerHTML = originalHTML;
-                            button.disabled = false;
-                        }
-                    }
-                };
-                xhr.send(new FormData(form));
-            }
-        }
-
-        // Form submission logging
-        form.addEventListener('submit', function (e) {
-            const formData = new FormData(this);
-            console.log('Form submission triggered with data:', Object.fromEntries(formData));
-            if (e.defaultPrevented) {
-                console.warn('Form submission was prevented');
-            }
         });
     });
 </script>
