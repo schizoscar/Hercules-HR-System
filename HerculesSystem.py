@@ -45,10 +45,10 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# Office location for geolocation tracking (replace with your actual coordinates)
-OFFICE_LATITUDE = 3.12225
-OFFICE_LONGITUDE = 101.57789
-OFFICE_RADIUS_KM = 0.1  # 100 meters radius
+# Office location for geolocation tracking (replace with actual coordinates)
+OFFICE_LATITUDE = 3.2227626628735946
+OFFICE_LONGITUDE = 101.56524201599817
+OFFICE_RADIUS_KM = 0.5  # 100 meters radius
 
 # Add to your app config
 app.config['OFFICE_LATITUDE'] = OFFICE_LATITUDE
@@ -643,15 +643,6 @@ def load_user(user_id):
 def inject_now():
     return {'now': datetime.utcnow()}
 
-with app.app_context():
-    if not os.path.exists(app.instance_path):
-        os.makedirs(app.instance_path)
-    db.create_all()
-    print("Database tables created!")
-    add_is_admin_column()
-    add_time_tracking_columns()
-    add_leave_balance_tables()
-
 @app.before_request
 def before_request():
     if request.url.startswith('https://'):
@@ -667,7 +658,7 @@ def handle_corrupted_headers(self):
         if "Bad request version" in str(e) or "Bad HTTP/0.9 request type" in str(e):
             print(f"Intercepted malformed HTTPS request, redirecting to HTTP...")
             try:
-                host = self.headers.get('Host', 'localhost:5000')
+                host = self.headers.get('Host', 'localhost:8888')
                 path = self.path
                 self.send_response(301)
                 self.send_header('Location', f'http://{host}{path}')
@@ -736,7 +727,7 @@ def home():
 def create_test_users():
     if not Employee.query.filter_by(username='admin').first():
         admin_user = Employee(
-            username='admin',
+            username='admin1',
             password=generate_password_hash('temp_password'),
             full_name='Admin User',
             email='scarletsumirepoh@gmail.com',
@@ -990,11 +981,12 @@ def time_tracking():
                     timestamp=now,
                     latitude=latitude,
                     longitude=longitude,
-                    address=address if address else 'Unknown',
+                    address=address if address else 'Auto-ended at clock-out',
                     ip_address=ip_address,
                     status=status
                 )
                 db.session.add(lunch_end_entry)
+                flash('Lunch automatically ended at clock-out', 'info')
                 
         elif action_type == 'clock_in':
             if latest_clock_in and latest_clock_in.timestamp.date() == now.date():
@@ -1007,6 +999,13 @@ def time_tracking():
                 db.session.rollback()
                 flash('Cannot start lunch: No clock-in found for today.', 'danger')
                 return redirect(url_for('dashboard'))
+            
+            # CRITICAL FIX: Prevent lunch start after clock out
+            if latest_clock_out:
+                db.session.rollback()
+                flash('Cannot start lunch: You have already clocked out today.', 'danger')
+                return redirect(url_for('dashboard'))
+            
             if latest_lunch_start and not latest_lunch_end:
                 db.session.rollback()
                 flash('Cannot start lunch: Lunch already started.', 'danger')
@@ -1021,6 +1020,13 @@ def time_tracking():
                 db.session.rollback()
                 flash('No lunch start record found for today.', 'danger')
                 return redirect(url_for('dashboard'))
+            
+            # Also prevent lunch end after clock out
+            if latest_clock_out:
+                db.session.rollback()
+                flash('Cannot end lunch: You have already clocked out today.', 'danger')
+                return redirect(url_for('dashboard'))
+                
             if latest_lunch_end:
                 db.session.rollback()
                 flash('You have already ended lunch today.', 'danger')
@@ -1078,8 +1084,8 @@ def is_in_office(latitude, longitude, accuracy=None):
     
     try:
         # Office coordinates (replace with your actual office coordinates)
-        OFFICE_LATITUDE = 3.12225  # Your office latitude
-        OFFICE_LONGITUDE = 101.57789  # Your office longitude
+        OFFICE_LATITUDE = 3.2227626628735946  # Your office latitude
+        OFFICE_LONGITUDE = 101.56524201599817  # Your office longitude
         
         # Office radius in kilometers
         OFFICE_RADIUS_KM = 0.1  # 100 meters radius
@@ -1122,30 +1128,63 @@ def can_perform_time_action(employee, action_type):
     now = datetime.utcnow()
     today = now.date()
     
+    # Get today's actual records from database, not just last timestamps
+    today_clock_in = TimeTracking.query.filter(
+        TimeTracking.employee_id == employee.id,
+        TimeTracking.action_type == 'clock_in',
+        db.func.date(TimeTracking.timestamp) == today
+    ).order_by(TimeTracking.timestamp.desc()).first()
+    
+    today_clock_out = TimeTracking.query.filter(
+        TimeTracking.employee_id == employee.id,
+        TimeTracking.action_type == 'clock_out', 
+        db.func.date(TimeTracking.timestamp) == today
+    ).order_by(TimeTracking.timestamp.desc()).first()
+    
+    today_lunch_start = TimeTracking.query.filter(
+        TimeTracking.employee_id == employee.id,
+        TimeTracking.action_type == 'lunch_start',
+        db.func.date(TimeTracking.timestamp) == today
+    ).order_by(TimeTracking.timestamp.desc()).first()
+    
+    today_lunch_end = TimeTracking.query.filter(
+        TimeTracking.employee_id == employee.id,
+        TimeTracking.action_type == 'lunch_end',
+        db.func.date(TimeTracking.timestamp) == today
+    ).order_by(TimeTracking.timestamp.desc()).first()
+
     if action_type == 'clock_in':
-        if employee.last_clock_in and employee.last_clock_in.date() == today:
+        if today_clock_in:
             return False, 'You have already clocked in today.'
         return True, ''
     
     elif action_type == 'clock_out':
-        if not employee.last_clock_in or employee.last_clock_in.date() != today:
+        if not today_clock_in:
             return False, 'You must clock in first.'
-        if employee.last_clock_out and employee.last_clock_out.date() == today:
+        if today_clock_out:
             return False, 'You have already clocked out today.'
         return True, ''
     
     elif action_type == 'lunch_start':
-        if not employee.last_clock_in or employee.last_clock_in.date() != today:
-            return False, 'You must clock in first.'
-        if employee.last_lunch_start and employee.last_lunch_start.date() == today:
-            return False, 'You have already started lunch today.'
+        # CRITICAL: Cannot start lunch if already clocked out
+        if today_clock_out:
+            return False, 'Cannot start lunch: You have already clocked out today.'
+        if not today_clock_in:
+            return False, 'Cannot start lunch: No clock-in found for today.'
+        if today_lunch_start and not today_lunch_end:
+            return False, 'Cannot start lunch: Lunch already started.'
+        if today_lunch_start and today_lunch_end:
+            return False, 'Cannot start lunch: Lunch already completed for today.'
         return True, ''
     
     elif action_type == 'lunch_end':
-        if not employee.last_lunch_start or employee.last_lunch_start.date() != today:
-            return False, 'You must start lunch first.'
-        if employee.last_lunch_end and employee.last_lunch_end.date() == today:
+        if not today_lunch_start:
+            return False, 'No lunch start record found for today.'
+        if today_lunch_end:
             return False, 'You have already ended lunch today.'
+        # CRITICAL: Cannot end lunch if already clocked out
+        if today_clock_out:
+            return False, 'Cannot end lunch: You have already clocked out today.'
         return True, ''
     
     return False, 'Invalid action.'
@@ -1322,86 +1361,124 @@ def calculate_unpaid_leave_deduction(salary, unpaid_days):
     daily_rate = salary / working_days
     return round(daily_rate * Decimal(str(unpaid_days)), 2)
 
-@app.route('/admin/reset_all_passwords')
+@app.route('/admin/email_gone_online')
 @login_required
-def reset_all_passwords():
+def email_gone_online():
     if current_user.user_type != 'admin':
-        flash('You do not have permission to reset passwords.', 'danger')
+        flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
-    
-    # Get all active employees
+
     employees = Employee.query.all()
-    server_url = request.host_url.rstrip('/')
-    
+    if not employees:
+        flash('No employees found to email.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    server_url = "https://hr.hercules-engineering.com"  # public URL
+
+    temp_passwords = {}
     reset_count = 0
     email_success_count = 0
     email_failed_count = 0
-    
+
+    # Step 1: Generate temporary passwords and update DB
+    for employee in employees:
+        temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
+        employee.password = generate_password_hash(temp_password)
+        temp_passwords[employee.id] = temp_password
+        reset_count += 1
+
+    # Commit all password changes at once
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to reset passwords: {str(e)}", 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Step 2: Send emails
     for employee in employees:
         try:
-            # Generate temporary password
-            characters = string.ascii_letters + string.digits
-            temp_password = ''.join(random.choice(characters) for i in range(10))
-            employee.password = generate_password_hash(temp_password)
-            
-            # Commit each password change immediately
-            db.session.commit()
-            reset_count += 1
-            
-            # Send email
-            subject = "Hercules HR System Update - New Login Details"
+            temp_password = temp_passwords[employee.id]
+            subject = "🎉 Hercules HR System is Live!"
             body = f"""
 Dear {employee.full_name},
 
-The Hercules HR system has been migrated to a new machine to optimize resource usage and improve stability. As a result, the server IP address has changed.
-Your password has been reset for security purposes. Please find your updated login details below:
+Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
 
-🔗 New System URL: {server_url}
-👤 Username: {employee.username}  
-🔐 Temporary Password: {temp_password}  
+🔗 Your New Login Portal:
+{server_url}
 
-Next steps:
-1. Use the NEW URL above to access the system
-2. Log in with your temporary password
-3. Change your password immediately after first login
+👤 Your Login Details:
+• Username: {employee.username}
+• Temporary Password: {temp_password}
 
-⚠️ Please note: the system is only accessible within the office while connected to the company Wi-Fi.
-Thank you for your cooperation.
+🚀 What's New:
+• Access the system from any device with internet
+• No more local network restrictions
+• Same great features, now with more flexibility
 
-Best regards,  
+📱 Access Anywhere:
+You can now access the system from:
+• Office computers
+• Home laptops
+• Mobile phones
+• Tablets
+
+If you experience any issues accessing the system or have questions, please contact the HR department.
+
+Best regards,
 Hercules HR Department
 """
-            
             email_sent = send_email(employee.email, subject, body)
-            
             if email_sent:
                 email_success_count += 1
                 print(f"✓ Email sent to {employee.email}")
             else:
                 email_failed_count += 1
                 print(f"✗ Failed to send email to {employee.email}")
-                
+
         except Exception as e:
-            db.session.rollback()
-            print(f"Error processing {employee.email}: {str(e)}")
+            print(f"Error sending email to {employee.email}: {e}")
             email_failed_count += 1
             continue
-    
-    # Final flash message with summary
-    if reset_count > 0:
-        flash_message = f"""
-        Password reset completed!
-        • {reset_count} passwords reset
-        • {email_success_count} emails sent successfully
-        • {email_failed_count} emails failed
-        """
-        
-        if email_failed_count > 0:
-            flash(flash_message, 'warning')
-        else:
-            flash(flash_message, 'success')
+
+    # Flash summary
+    flash_message = f"""
+Password reset and emailing completed!
+• {reset_count} passwords reset
+• {email_success_count} emails sent successfully
+• {email_failed_count} emails failed
+"""
+    if email_failed_count > 0:
+        flash(flash_message, 'warning')
     else:
-        flash('No employees found to reset passwords.', 'warning')
+        flash(flash_message, 'success')
+
+    return redirect(url_for('dashboard'))
+
+@app.route('/reset_admin_password')
+def reset_admin_password():
+    admin_user = Employee.query.filter_by(username='admin').first()
+    
+    if not admin_user:
+        flash("Admin user not found.", "danger")
+        return redirect(url_for('dashboard'))
+    
+    # Generate new temporary password
+    characters = string.ascii_letters + string.digits
+    temp_password = ''.join(random.choice(characters) for i in range(10))
+    admin_user.password = generate_password_hash(temp_password)
+    
+    try:
+        db.session.commit()
+        flash(f"Admin password reset successfully. New password: {temp_password}", "success")
+        
+        # Optional: send email to admin
+        # send_email(admin_user.email, "Admin Password Reset", f"Your new password is: {temp_password}")
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error resetting admin password: {str(e)}", "danger")
     
     return redirect(url_for('dashboard'))
 
@@ -2501,7 +2578,7 @@ def add_employee():
         db.session.commit()
         
         # Send email (your existing email code)
-        server_url = request.host_url.rstrip('/')
+        server_url = "https://hr.hercules-engineering.com"
         subject = "Your Hercules HR Account Has Been Created"
         body = f"""
 Dear {form.full_name.data},
@@ -2592,8 +2669,8 @@ def bulk_add_employees():
                 employees_added.append(employee)
                 success_count += 1
                 
-                # Send email (your existing email code)
-                server_url = request.host_url.rstrip('/')
+                # Send email 
+                server_url = "https://hr.hercules-engineering.com"
                 subject = "Your Hercules HR Account Has Been Created"
                 body = f"""
 Dear {full_name},
@@ -3256,46 +3333,44 @@ def reset_password(employee_id):
     if current_user.user_type != 'admin':
         flash('You do not have permission to reset passwords.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     employee = Employee.query.get_or_404(employee_id)
-    
-    characters = string.ascii_letters + string.digits
-    temp_password = ''.join(random.choice(characters) for i in range(10))
+
+    # Generate temporary password
+    temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+
+    # Assign hash directly
     employee.password = generate_password_hash(temp_password)
-    
-    db.session.commit()
-    
-    # Get the current server URL dynamically
-    server_url = request.host_url.rstrip('/')
-    
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to reset password: {str(e)}", 'danger')
+        return redirect(url_for('manage_employees'))
+
+    # Send email after commit
+    server_url = "https://hr.hercules-engineering.com"
     subject = "Your Hercules HR Password Has Been Reset"
     body = f"""
 Dear {employee.full_name},
 
 Your Hercules HR password has been reset by the administrator.  
-Please find your updated login details below:
-
 Username: {employee.username}  
 Temporary Password: {temp_password}  
 
-👉 For your security, please change this password immediately after logging in.
-
-You can access the system here: {server_url}
-
-If you run into any issues, don’t hesitate to reach out to the HR team.  
+Please log in here: {server_url}  
+and change your password immediately.
 
 Best regards,  
 Hercules HR Department
 """
-    
-    email_sent = send_email(employee.email, subject, body)
-    
-    if email_sent:
-        flash('Password reset successfully. Email notification sent.', 'success')
-    else:
-        flash(f'Password reset successfully. New password: {temp_password}. Failed to send email.', 'warning')
-    
+
+    send_email(employee.email, subject, body)
+    flash('Password reset successfully. Email notification sent.', 'success')
+
     return redirect(url_for('manage_employees'))
+
 
 @app.route('/manage_leave_balances')
 @login_required
@@ -3896,79 +3971,132 @@ try:
 except ImportError:
     NETIFACES_AVAILABLE = False
 
+# Your existing imports and app configuration...
+# [Keep all your existing imports and app setup code here]
+
+# REMOVE the top-level db.create_all() block entirely
+
 if __name__ == '__main__':
     if not os.path.exists(app.instance_path):
         os.makedirs(app.instance_path)
     
-    def get_local_ip():
-        local_ip = "127.0.0.1"
-        network_ip = "127.0.0.1"
+    # Check if running in Docker/Production
+    is_docker = os.path.exists('/.dockerenv')
+    is_production = os.environ.get('FLASK_ENV') == 'production'
+    
+    if is_docker or is_production:
+        # ==================== PRODUCTION MODE ====================
+        print("=== HR System - Production Mode ===")
+        print("Starting Flask Server...")
+        print(f"Host: 0.0.0.0, Port: 8888")  # ← CHANGED TO 8888
+        print(f"Instance path: {app.instance_path}")
+        print(f"Database URI: {app.config.get('SQLALCHEMY_DATABASE_URI', 'Not set')}")
         
-        # Try socket connection for network IP
+        # Test database connection and create tables if needed
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.settimeout(2)
-                s.connect(("8.8.8.8", 80))
-                network_ip = s.getsockname()[0]
-                if network_ip.startswith("127.") or network_ip.startswith("169.254."):
-                    print(f"Warning: Socket returned non-routable IP ({network_ip}). Attempting fallback.")
-                    network_ip = "127.0.0.1"
-        except socket.gaierror:
-            print("Warning: Network IP retrieval failed: DNS resolution error (no internet?).")
-        except socket.timeout:
-            print("Warning: Network IP retrieval failed: Connection timed out.")
-        except socket.error as e:
-            print(f"Warning: Network IP retrieval failed: {str(e)}.")
+            with app.app_context():
+                db.engine.connect()
+                print("✅ Database connection successful")
+                
+                # Check if tables already exist before creating
+                inspector = db.inspect(db.engine)
+                existing_tables = inspector.get_table_names()
+                
+                if not existing_tables:  # Only create if no tables exist
+                    print("Creating database tables...")
+                    db.create_all()
+                    add_is_admin_column()
+                    add_time_tracking_columns()
+                    add_leave_balance_tables()
+                    print("✅ Database tables created!")
+                else:
+                    print("✅ Database tables already exist")
+                    
+        except Exception as e:
+            print(f"❌ Database connection failed: {e}")
         
-        # Fallback to netifaces if available
-        if NETIFACES_AVAILABLE and network_ip == "127.0.0.1":
+        # Test imports
+        try:
+            from flask import Flask
+            print("✅ Flask import successful")
+        except ImportError as e:
+            print(f"❌ Flask import failed: {e}")
+        
+        try:
+            app.run(host='0.0.0.0', port=8888, debug=False)  # ← CORRECT
+            print("✅ Flask server started successfully")
+        except Exception as e:
+            print(f"❌ ERROR starting Flask app: {e}")
+            import traceback
+            traceback.print_exc()
+        
+    else:
+        # ==================== DEVELOPMENT MODE ====================
+        # Database creation for development
+        with app.app_context():
+            # Check if tables already exist before creating
+            inspector = db.inspect(db.engine)
+            existing_tables = inspector.get_table_names()
+            
+            if not existing_tables:
+                print("Creating database tables...")
+                db.create_all()
+                add_is_admin_column()
+                add_time_tracking_columns()
+                add_leave_balance_tables()
+                print("✅ Database tables created!")
+            else:
+                print("✅ Database tables already exist")
+        
+        def get_local_ip():
+            # Simplified IP detection - just get the network IP
+            network_ip = "127.0.0.1"
             try:
-                for iface in netifaces.interfaces():
-                    addrs = netifaces.ifaddresses(iface).get(netifaces.AF_INET, [])
-                    for addr in addrs:
-                        ip = addr.get('addr')
-                        if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
-                            network_ip = ip
-                            print(f"Found network IP via netifaces: {network_ip}")
-                            break
-                    if network_ip != "127.0.0.1":
-                        break
-            except Exception as e:
-                print(f"Warning: netifaces fallback failed: {str(e)}.")
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.settimeout(2)
+                    s.connect(("8.8.8.8", 80))
+                    network_ip = s.getsockname()[0]
+            except:
+                pass  # Keep 127.0.0.1 if detection fails
+            
+            return network_ip
         
-        # Get local IP by hostname
+        network_ip = get_local_ip()
+        
+        print("=" * 50)
+        print("HR System - Development Mode")
+        print(f"Local:    http://127.0.0.1:8888")  # ← CHANGED TO 8888
+        print(f"Network:  http://{network_ip}:8888")  # ← CHANGED TO 8888
+        print("=" * 50)
+        
+        # Run in development mode
+        app.run(debug=True, host='0.0.0.0', port=8888)  # ← CHANGED TO 8888
+
+# ==================== GUNICORN COMPATIBILITY ====================
+else:
+    # This block runs when the app is imported by Gunicorn
+    # Ensure instance folder exists
+    if not os.path.exists(app.instance_path):
+        os.makedirs(app.instance_path)
+        print("✅ Gunicorn: Created instance directory")
+    
+    # Initialize database connection but don't create tables
+    # Tables should already exist from the main process
+    with app.app_context():
         try:
-            local_ip = socket.gethostbyname(socket.gethostname())
-            socket.inet_aton(local_ip)
-            if local_ip.startswith("127."):
-                local_ip = "127.0.0.1"
-        except (socket.gaierror, socket.error, OSError) as e:
-            print(f"Warning: Local IP retrieval failed: {str(e)}. Using 127.0.0.1.")
-        
-        if network_ip != "127.0.0.1":
-            print("Ensure firewall allows incoming connections on port 5000 for network access.")
-        
-        return local_ip, network_ip
-    
-    local_ip, network_ip = get_local_ip()
-    
-    print("=" * 50)
-    print(f"Local access: http://{local_ip}:5000")
-    print(f"Network access: http://{network_ip}:5000")
-    print(f"Test connection: http://{network_ip}:5000/test")
-    print("Ensure mobile devices are on the same WiFi network!")
-    print("=" * 50)
-    
-    original_show_server_banner = cli.show_server_banner
-    
-    def custom_show_server_banner(*args, **kwargs):
-        original_show_server_banner(*args, **kwargs)
-        print(f" * Local URL: http://{local_ip}:5000")
-        if network_ip != "127.0.0.1":
-            print(f" * Network URL: http://{network_ip}:5000")
-        else:
-            print("Warning: Network access unavailable: No valid network IP detected. Check network connection or firewall.")
-    
-    cli.show_server_banner = custom_show_server_banner
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+            # Test database connection
+            db.engine.connect()
+            print("✅ Gunicorn: Database connection successful")
+            
+            # Just verify tables exist without creating them
+            inspector = db.inspect(db.engine)
+            existing_tables = inspector.get_table_names()
+            
+            if existing_tables:
+                print(f"✅ Gunicorn: Found {len(existing_tables)} database tables")
+            else:
+                print("⚠️ Gunicorn: No database tables found (this might be expected for first run)")
+                
+        except Exception as e:
+            print(f"❌ Gunicorn: Database initialization failed: {e}")
+            # Don't crash - let the worker continue and hope main process creates tables
