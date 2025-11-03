@@ -155,7 +155,7 @@ def send_email_async(to, subject, body):
     return True  # Return immediately
 
 def send_email_sendgrid(to_email, subject, body):
-    """Use SendGrid API instead of SMTP"""
+    """Use SendGrid API with plain text formatting"""
     try:
         response = requests.post(
             'https://api.sendgrid.com/v3/mail/send',
@@ -168,12 +168,12 @@ def send_email_sendgrid(to_email, subject, body):
                     'to': [{'email': to_email}]
                 }],
                 'from': {
-                    'email': app.config['MAIL_DEFAULT_SENDER'],
-                    'name': 'Hercules IT Department'
+                    'email': 'itdepthercules@gmail.com',
+                    'name': 'Hercules HR Department'
                 },
                 'subject': subject,
                 'content': [{
-                    'type': 'text/plain',
+                    'type': 'text/plain',  # Use plain text to avoid link rewriting
                     'value': body
                 }]
             },
@@ -1455,38 +1455,58 @@ def email_gone_online_test():
         flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
 
+    # Find your test employee
     test_employee = Employee.query.filter_by(email="scarletsumirepoh@gmail.com").first()
     if not test_employee:
         flash('Test employee not found.', 'danger')
         return redirect(url_for('dashboard'))
 
     server_url = "https://hercules-hr-system.onrender.com/"
+
+    # Generate temp password only for test employee
     temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
     test_employee.password = generate_password_hash(temp_password)
 
     try:
         db.session.commit()
         
-        subject = "🎉 TEST - Hercules HR System is Live!"
-        body = f"""Dear {test_employee.full_name},
+        subject = "🎉 Hercules HR System is Live!"
+        body = f"""
+Dear {test_employee.full_name},
 
-*** THIS IS A TEST EMAIL ***
+Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
 
-Login Details:
+🔗 Your New Login Portal:
+{server_url}
+
+👤 Your Login Details:
 • Username: {test_employee.username}
 • Temporary Password: {temp_password}
-• Portal: {server_url}
+
+🚀 What's New:
+• Access the system from any device with internet
+• No more local network restrictions
+• Same great features, now with more flexibility
+
+📱 Access Anywhere:
+You can now access the system from:
+• Office computers
+• Home laptops
+• Mobile phones
+• Tablets
+
+If you experience any issues accessing the system or have questions, please contact the HR department.
 
 Best regards,
-Hercules HR Department"""
-        
-        # Use SendGrid instead of SMTP
+Hercules IT Department
+"""
+        # Send using SendGrid
         email_sent = send_email_sendgrid(test_employee.email, subject, body)
         
         if email_sent:
-            flash(f'Password reset! Email sent to {test_employee.email}', 'success')
+            flash(f'Test email sent successfully to {test_employee.email}', 'success')
         else:
-            flash(f'Password reset! Email failed, but temp password: {temp_password}', 'warning')
+            flash(f'Failed to send test email to {test_employee.email}', 'warning')
             
     except Exception as e:
         db.session.rollback()
