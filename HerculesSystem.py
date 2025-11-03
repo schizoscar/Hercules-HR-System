@@ -160,6 +160,51 @@ def send_email_async(to, subject, body):
     thread.start()
     return True  # Return immediately
 
+@app.route('/admin/init_database')
+def init_database():
+    """Initialize database tables (no login required for this specific route)"""
+    try:
+        # Create all tables
+        db.create_all()
+        
+        # Check if we need to create default admin
+        try:
+            admin_exists = Employee.query.filter_by(username='admin').first()
+        except:
+            admin_exists = None
+        
+        if not admin_exists:
+            admin = Employee(
+                username='admin1',
+                password=generate_password_hash('admin123'),
+                full_name='System Administrator',
+                email='admin@hercules.com',
+                nationality='Malaysian',
+                employee_id='ADMIN001',
+                is_admin=True,
+                user_type='admin',
+                date_joined=datetime.now().date()
+            )
+            db.session.add(admin)
+            db.session.commit()
+            flash('Database initialized with default admin user (username: admin1, password: admin123)', 'success')
+        else:
+            flash('Database tables already exist!', 'info')
+            
+        return redirect(url_for('login'))  # Redirect to login page
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error creating database: {str(e)}', 'danger')
+        return '''
+        <html>
+        <body>
+            <h2>Database Setup Error</h2>
+            <p>Error: {}</p>
+            <p><a href="/">Go to Home</a></p>
+        </body>
+        </html>
+        '''.format(str(e))
+
 def send_email_sendgrid(to_email, subject, body):
     """Use SendGrid API with plain text formatting"""
     try:
