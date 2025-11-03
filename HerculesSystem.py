@@ -205,41 +205,43 @@ def init_database():
         </html>
         '''.format(str(e))
 
-@app.route('/admin/fix_proper_hash')
-def fix_proper_hash():
-    """Use proper werkzeug hashing that matches your login system"""
+@app.route('/admin/update_schema')
+@login_required
+def update_schema():
+    """Update database schema to support longer passwords"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
     try:
-        # Drop and recreate all tables to clear any existing data
+        # This will recreate tables with the updated schema
         db.drop_all()
         db.create_all()
         
-        # Use werkzeug's generate_password_hash but force a shorter method
+        # Recreate your admin user
         from werkzeug.security import generate_password_hash
-        
-        # Use 'pbkdf2:sha256' method which produces shorter hashes
-        password_hash = generate_password_hash('admin123', method='pbkdf2:sha256', salt_length=8)
-        
-        print(f"Password hash length: {len(password_hash)}")  # Debug
-        
         admin = Employee(
             username='admin1',
-            password=password_hash,
-            full_name='Admin',
-            email='admin@hercules.com',
+            password=generate_password_hash('admin123', method='pbkdf2:sha256', salt_length=8),
+            full_name='System Administrator',
+            email='admin@hercules.com', 
             nationality='Malaysian',
             employee_id='ADMIN001',
             is_admin=True,
             user_type='admin',
-            date_joined=datetime.now().date()
+            date_joined=datetime.now().date(),
+            basic_salary=0
         )
         db.session.add(admin)
         db.session.commit()
         
-        flash('Database initialized! Login with username: admin1, password: admin123', 'success')
-        return redirect(url_for('login'))
+        flash('Database schema updated! Password column now supports 255 characters.', 'success')
+        return redirect(url_for('dashboard'))
         
     except Exception as e:
-        return f'Error: {str(e)}'
+        db.session.rollback()
+        flash(f'Error updating schema: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
 
 @app.route('/admin/test_login')
 def test_login():
@@ -376,7 +378,7 @@ class Employee(UserMixin, db.Model):
     __tablename__ = 'employee'  # Explicitly set to 'employees'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(120), nullable=False)
+    password = db.Column(db.String(255), nullable=False)  # Increased to 255
     full_name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     nationality = db.Column(db.String(80), nullable=False)
