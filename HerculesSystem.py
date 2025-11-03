@@ -1917,23 +1917,7 @@ def import_data():
             print(f"Imported {imported_counts['employees']} employees")
             print(f"ID mapping: {employee_id_mapping}")
 
-            # STEP 2: Import Payroll Settings (independent table)
-            print("Importing payroll settings...")
-            for setting_data in data.get('payroll_settings', []):
-                existing = PayrollSettings.query.filter_by(id=setting_data['id']).first()
-                if not existing:
-                    setting = PayrollSettings(
-                        id=setting_data['id'],
-                        setting_name=setting_data['setting_name'],
-                        setting_value=setting_data['setting_value'],
-                        description=setting_data['description'],
-                        updated_at=datetime.fromisoformat(setting_data['updated_at']) if setting_data['updated_at'] else None,
-                        updated_by=setting_data['updated_by']
-                    )
-                    db.session.add(setting)
-                    imported_counts['payroll_settings'] += 1
-
-            # STEP 3: Import Payroll Components (independent table)
+            # STEP 2: Import Payroll Components (independent table - no foreign keys)
             print("Importing payroll components...")
             for component_data in data.get('payroll_components', []):
                 existing = PayrollComponent.query.filter_by(id=component_data['id']).first()
@@ -1950,6 +1934,24 @@ def import_data():
                     )
                     db.session.add(component)
                     imported_counts['payroll_components'] += 1
+
+            # STEP 3: Import Payroll Settings (depends on employees) - use ID mapping
+            print("Importing payroll settings...")
+            for setting_data in data.get('payroll_settings', []):
+                existing = PayrollSettings.query.filter_by(id=setting_data['id']).first()
+                if not existing:
+                    new_updated_by = employee_id_mapping.get(setting_data['updated_by'])
+                    if new_updated_by:  # Only import if the referenced employee exists
+                        setting = PayrollSettings(
+                            id=setting_data['id'],
+                            setting_name=setting_data['setting_name'],
+                            setting_value=setting_data['setting_value'],
+                            description=setting_data['description'],
+                            updated_at=datetime.fromisoformat(setting_data['updated_at']) if setting_data['updated_at'] else None,
+                            updated_by=new_updated_by
+                        )
+                        db.session.add(setting)
+                        imported_counts['payroll_settings'] += 1
 
             # STEP 4: Import Leave Balances (depends on employees) - use ID mapping
             print("Importing leave balances...")
@@ -1976,7 +1978,8 @@ def import_data():
                 existing = EmployeePayrollAdjustment.query.filter_by(id=adjustment_data['id']).first()
                 if not existing:
                     new_employee_id = employee_id_mapping.get(adjustment_data['employee_id'])
-                    if new_employee_id:
+                    new_created_by = employee_id_mapping.get(adjustment_data['created_by'])
+                    if new_employee_id and new_created_by:
                         adjustment = EmployeePayrollAdjustment(
                             id=adjustment_data['id'],
                             employee_id=new_employee_id,
@@ -1984,7 +1987,7 @@ def import_data():
                             adjustment_type=adjustment_data['adjustment_type'],
                             amount=adjustment_data['amount'],
                             description=adjustment_data['description'],
-                            created_by=adjustment_data['created_by'],
+                            created_by=new_created_by,
                             created_at=datetime.fromisoformat(adjustment_data['created_at']) if adjustment_data['created_at'] else None,
                             updated_at=datetime.fromisoformat(adjustment_data['updated_at']) if adjustment_data['updated_at'] else None
                         )
