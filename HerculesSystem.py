@@ -1454,6 +1454,151 @@ def calculate_unpaid_leave_deduction(salary, unpaid_days):
     daily_rate = salary / working_days
     return round(daily_rate * Decimal(str(unpaid_days)), 2)
 
+@app.route('/admin/export_data')
+@login_required
+def export_data():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    import json
+    from datetime import datetime
+    
+    data = {
+        'export_date': datetime.now().isoformat(),
+        'employees': [],
+        'time_tracking': [],
+        'payroll': [],
+        'payroll_settings': [],
+        'payroll_components': [],
+        'employee_payroll_adjustments': [],
+        'payroll_audit_trail': [],
+        'leave_requests': [],
+        'leave_balances': [],
+        'leave_balance_history': []
+    }
+    
+    try:
+        # Export Employees
+        for employee in Employee.query.all():
+            data['employees'].append({
+                'id': employee.id,
+                'username': employee.username,
+                'password': employee.password,  # Keep hashed passwords
+                'full_name': employee.full_name,
+                'email': employee.email,
+                'nationality': employee.nationality,
+                'employee_id': employee.employee_id,
+                'hire_date': employee.hire_date.isoformat() if employee.hire_date else None,
+                'is_admin': employee.is_admin,
+                'user_type': employee.user_type,
+                'last_clock_in': employee.last_clock_in.isoformat() if employee.last_clock_in else None,
+                'last_clock_out': employee.last_clock_out.isoformat() if employee.last_clock_out else None,
+                'last_lunch_start': employee.last_lunch_start.isoformat() if employee.last_lunch_start else None,
+                'last_lunch_end': employee.last_lunch_end.isoformat() if employee.last_lunch_end else None,
+                'date_joined': employee.date_joined.isoformat() if employee.date_joined else None,
+                'basic_salary': float(employee.basic_salary) if employee.basic_salary else None
+            })
+        
+        # Export Time Tracking
+        for entry in TimeTracking.query.all():
+            data['time_tracking'].append({
+                'id': entry.id,
+                'employee_id': entry.employee_id,
+                'action_type': entry.action_type,
+                'timestamp': entry.timestamp.isoformat() if entry.timestamp else None,
+                'latitude': entry.latitude,
+                'longitude': entry.longitude,
+                'address': entry.address,
+                'status': entry.status,
+                'ip_address': entry.ip_address
+            })
+        
+        # Export Payroll
+        for payroll in Payroll.query.all():
+            data['payroll'].append({
+                'id': payroll.id,
+                'employee_id': payroll.employee_id,
+                'pay_period': payroll.pay_period,
+                'basic_salary': float(payroll.basic_salary) if payroll.basic_salary else 0,
+                'overtime_hours': float(payroll.overtime_hours) if payroll.overtime_hours else 0,
+                'overtime_pay': float(payroll.overtime_pay) if payroll.overtime_pay else 0,
+                'bonuses': float(payroll.bonuses) if payroll.bonuses else 0,
+                'unpaid_leave_deduction': float(payroll.unpaid_leave_deduction) if payroll.unpaid_leave_deduction else 0,
+                'epf_employee': float(payroll.epf_employee) if payroll.epf_employee else 0,
+                'epf_employer': float(payroll.epf_employer) if payroll.epf_employer else 0,
+                'socso_employee': float(payroll.socso_employee) if payroll.socso_employee else 0,
+                'socso_employer': float(payroll.socso_employer) if payroll.socso_employer else 0,
+                'eis_employee': float(payroll.eis_employee) if payroll.eis_employee else 0,
+                'eis_employer': float(payroll.eis_employer) if payroll.eis_employer else 0,
+                'tax_deduction': float(payroll.tax_deduction) if payroll.tax_deduction else 0,
+                'other_deductions': float(payroll.other_deductions) if payroll.other_deductions else 0,
+                'total_deductions': float(payroll.total_deductions) if payroll.total_deductions else 0,
+                'net_salary': float(payroll.net_salary) if payroll.net_salary else 0,
+                'status': payroll.status,
+                'created_at': payroll.created_at.isoformat() if payroll.created_at else None,
+                'processed_at': payroll.processed_at.isoformat() if payroll.processed_at else None
+            })
+        
+        # Export other tables similarly...
+        
+        # Save to JSON file
+        with open('backup.json', 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        flash('Data exported successfully to backup.json', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        flash(f'Error exporting data: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/admin/import_data')
+@login_required
+def import_data():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    import json
+    
+    try:
+        with open('backup.json', 'r') as f:
+            data = json.load(f)
+        
+        # Import Employees
+        for emp_data in data['employees']:
+            # Check if employee already exists
+            existing = Employee.query.filter_by(email=emp_data['email']).first()
+            if not existing:
+                employee = Employee(
+                    username=emp_data['username'],
+                    password=emp_data['password'],  # Keep existing hashed password
+                    full_name=emp_data['full_name'],
+                    email=emp_data['email'],
+                    nationality=emp_data['nationality'],
+                    employee_id=emp_data['employee_id'],
+                    hire_date=datetime.fromisoformat(emp_data['hire_date']) if emp_data['hire_date'] else None,
+                    is_admin=emp_data['is_admin'],
+                    user_type=emp_data['user_type'],
+                    last_clock_in=datetime.fromisoformat(emp_data['last_clock_in']) if emp_data['last_clock_in'] else None,
+                    last_clock_out=datetime.fromisoformat(emp_data['last_clock_out']) if emp_data['last_clock_out'] else None,
+                    last_lunch_start=datetime.fromisoformat(emp_data['last_lunch_start']) if emp_data['last_lunch_start'] else None,
+                    last_lunch_end=datetime.fromisoformat(emp_data['last_lunch_end']) if emp_data['last_lunch_end'] else None,
+                    date_joined=datetime.fromisoformat(emp_data['date_joined']) if emp_data['date_joined'] else None,
+                    basic_salary=emp_data['basic_salary']
+                )
+                db.session.add(employee)
+        
+        db.session.commit()
+        flash('Data imported successfully!', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error importing data: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
 @app.route('/admin/email_gone_online_test')
 @login_required
 def email_gone_online_test():
