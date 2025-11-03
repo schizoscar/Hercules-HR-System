@@ -6,7 +6,7 @@ from sqlalchemy.orm import aliased
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
-# from flask_migrate import Migrate
+from flask_migrate import Migrate
 from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, HiddenField, DecimalField
 from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -66,7 +66,7 @@ app.config['OFFICE_LATITUDE'] = OFFICE_LATITUDE
 app.config['OFFICE_LONGITUDE'] = OFFICE_LONGITUDE
 app.config['OFFICE_RADIUS_KM'] = OFFICE_RADIUS_KM
 
-# migrate = Migrate(app, db)
+migrate = Migrate(app, db)
 
 @app.after_request
 def add_security_headers(response):
