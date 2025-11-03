@@ -208,40 +208,63 @@ def init_database():
 @app.route('/admin/update_schema')
 @login_required
 def update_schema():
-    """Update database schema to support longer passwords"""
+    """Safely update password column length without dropping tables"""
     if current_user.user_type != 'admin':
         flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
     
     try:
-        # This will recreate tables with the updated schema
-        db.drop_all()
-        db.create_all()
+        # Use raw SQL to alter the column
+        from sqlalchemy import text
         
-        # Recreate your admin user
-        from werkzeug.security import generate_password_hash
-        admin = Employee(
-            username='admin1',
-            password=generate_password_hash('admin123', method='pbkdf2:sha256', salt_length=8),
-            full_name='System Administrator',
-            email='admin@hercules.com', 
-            nationality='Malaysian',
-            employee_id='ADMIN001',
-            is_admin=True,
-            user_type='admin',
-            date_joined=datetime.now().date(),
-            basic_salary=0
-        )
-        db.session.add(admin)
-        db.session.commit()
+        # Check current column length
+        result = db.session.execute(text("""
+            SELECT character_maximum_length 
+            FROM information_schema.columns 
+            WHERE table_name='employee' AND column_name='password'
+        """)).fetchone()
         
-        flash('Database schema updated! Password column now supports 255 characters.', 'success')
+        current_length = result[0] if result else None
+        
+        if current_length == 120:
+            # Alter the column to 255
+            db.session.execute(text("ALTER TABLE employee ALTER COLUMN password TYPE VARCHAR(255)"))
+            db.session.commit()
+            flash('✅ Password column updated from 120 to 255 characters!', 'success')
+        else:
+            flash(f'ℹ️ Password column is already {current_length} characters', 'info')
+            
         return redirect(url_for('dashboard'))
         
     except Exception as e:
         db.session.rollback()
         flash(f'Error updating schema: {str(e)}', 'danger')
         return redirect(url_for('dashboard'))
+
+@app.route('/admin/check_schema')
+@login_required
+def check_schema():
+    """Check current database schema"""
+    try:
+        from sqlalchemy import text
+        
+        result = db.session.execute(text("""
+            SELECT column_name, data_type, character_maximum_length
+            FROM information_schema.columns 
+            WHERE table_name='employee'
+        """)).fetchall()
+        
+        html = "<h2>Employee Table Schema</h2><table border='1'>"
+        html += "<tr><th>Column</th><th>Type</th><th>Length</th></tr>"
+        
+        for row in result:
+            html += f"<tr><td>{row[0]}</td><td>{row[1]}</td><td>{row[2]}</td></tr>"
+        
+        html += "</table>"
+        return html
+        
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 @app.route('/admin/test_login')
 def test_login():
