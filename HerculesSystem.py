@@ -6,6 +6,7 @@ from sqlalchemy.orm import aliased
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField
+from flask_migrate import Migrate
 from wtforms import StringField, PasswordField, SubmitField, DateField, TextAreaField, SelectField, HiddenField, DecimalField
 from wtforms.validators import DataRequired, Length, Email, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -36,31 +37,36 @@ import threading
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'hr.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- Render/Proxy Safe Config ---
+# --- DATABASE CONFIG (Updated for PostgreSQL) ---
+if os.environ.get('DATABASE_URL'):
+    # Use PostgreSQL on Render
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+else:
+    # Use SQLite for local development
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'hr.db')
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = "None"
 app.config['REMEMBER_COOKIE_SECURE'] = True
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 
-# Define Malaysia timezone
 MYT = pytz.timezone('Asia/Kuala_Lumpur')
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# Office location for geolocation tracking (replace with actual coordinates)
 OFFICE_LATITUDE = 3.2227626628735946
 OFFICE_LONGITUDE = 101.56524201599817
-OFFICE_RADIUS_KM = 0.5  # 100 meters radius
+OFFICE_RADIUS_KM = 0.5
 
-# Add to your app config
 app.config['OFFICE_LATITUDE'] = OFFICE_LATITUDE
 app.config['OFFICE_LONGITUDE'] = OFFICE_LONGITUDE
 app.config['OFFICE_RADIUS_KM'] = OFFICE_RADIUS_KM
+
+migrate = Migrate(app, db)
 
 @app.after_request
 def add_security_headers(response):
@@ -1526,34 +1532,40 @@ def email_gone_online():
         flash('No employees found to email.', 'warning')
         return redirect(url_for('dashboard'))
 
-    server_url = "https://hercules-hr-system.onrender.com/"  # public URL
-
-    temp_passwords = {}
+    server_url = "https://hercules-hr-system.onrender.com/"
+    
+    # Process in batches to avoid memory issues
+    batch_size = 20
     reset_count = 0
     email_success_count = 0
     email_failed_count = 0
 
-    # Step 1: Generate temporary passwords and update DB
-    for employee in employees:
-        temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
-        employee.password = generate_password_hash(temp_password)
-        temp_passwords[employee.id] = temp_password
-        reset_count += 1
+    # Process employees in batches
+    for i in range(0, len(employees), batch_size):
+        batch = employees[i:i + batch_size]
+        temp_passwords = {}
+        
+        # Step 1: Generate temporary passwords for this batch
+        for employee in batch:
+            temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
+            employee.password = generate_password_hash(temp_password)
+            temp_passwords[employee.id] = temp_password
+            reset_count += 1
 
-    # Commit all password changes at once
-    try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        flash(f"Failed to reset passwords: {str(e)}", 'danger')
-        return redirect(url_for('dashboard'))
-
-    # Step 2: Send emails
-    for employee in employees:
+        # Commit this batch
         try:
-            temp_password = temp_passwords[employee.id]
-            subject = "🎉 Hercules HR System is Live!"
-            body = f"""
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Failed to reset passwords at batch {i//batch_size + 1}: {str(e)}", 'danger')
+            return redirect(url_for('dashboard'))
+
+        # Step 2: Send emails for this batch using SendGrid
+        for employee in batch:
+            try:
+                temp_password = temp_passwords[employee.id]
+                subject = "🎉 Hercules HR System is Live!"
+                body = f"""
 Dear {employee.full_name},
 
 Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
@@ -1582,18 +1594,19 @@ If you experience any issues accessing the system or have questions, please cont
 Best regards,
 Hercules IT Department
 """
-            email_sent = send_email(employee.email, subject, body)
-            if email_sent:
-                email_success_count += 1
-                print(f"✓ Email sent to {employee.email}")
-            else:
-                email_failed_count += 1
-                print(f"✗ Failed to send email to {employee.email}")
+                # Use SendGrid instead of SMTP
+                email_sent = send_email_sendgrid(employee.email, subject, body)
+                if email_sent:
+                    email_success_count += 1
+                    print(f"✓ Email sent to {employee.email}")
+                else:
+                    email_failed_count += 1
+                    print(f"✗ Failed to send email to {employee.email}")
 
-        except Exception as e:
-            print(f"Error sending email to {employee.email}: {e}")
-            email_failed_count += 1
-            continue
+            except Exception as e:
+                print(f"Error sending email to {employee.email}: {e}")
+                email_failed_count += 1
+                continue
 
     # Flash summary
     flash_message = f"""
