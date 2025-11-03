@@ -2147,6 +2147,8 @@ def debug_import():
         return redirect(url_for('dashboard'))
     
     try:
+        from sqlalchemy import text
+        
         # Count records in each table
         counts = {
             'employees': Employee.query.count(),
@@ -2173,15 +2175,63 @@ def debug_import():
         result += "<h2>Foreign Key Issues</h2>"
         
         # Check if there are time_tracking records without employees
-        orphaned_time = db.session.execute("""
-            SELECT tt.employee_id 
-            FROM time_tracking tt 
-            LEFT JOIN employee e ON tt.employee_id = e.id 
-            WHERE e.id IS NULL
-        """).fetchall()
+        try:
+            orphaned_time = db.session.execute(text("""
+                SELECT tt.employee_id 
+                FROM time_tracking tt 
+                LEFT JOIN employee e ON tt.employee_id = e.id 
+                WHERE e.id IS NULL
+            """)).fetchall()
+            
+            if orphaned_time:
+                result += f"<p>Orphaned time_tracking records: {[r[0] for r in orphaned_time]}</p>"
+            else:
+                result += "<p>No orphaned time_tracking records</p>"
+        except Exception as e:
+            result += f"<p>Error checking time_tracking: {e}</p>"
         
-        if orphaned_time:
-            result += f"<p>Orphaned time_tracking records: {[r[0] for r in orphaned_time]}</p>"
+        # Check leave_balances
+        try:
+            orphaned_leave_balances = db.session.execute(text("""
+                SELECT lb.employee_id 
+                FROM leave_balances lb 
+                LEFT JOIN employee e ON lb.employee_id = e.id 
+                WHERE e.id IS NULL
+            """)).fetchall()
+            
+            if orphaned_leave_balances:
+                result += f"<p>Orphaned leave_balances records: {[r[0] for r in orphaned_leave_balances]}</p>"
+            else:
+                result += "<p>No orphaned leave_balances records</p>"
+        except Exception as e:
+            result += f"<p>Error checking leave_balances: {e}</p>"
+        
+        # Check leave_requests
+        try:
+            orphaned_leave_requests = db.session.execute(text("""
+                SELECT lr.employee_id 
+                FROM leave_requests lr 
+                LEFT JOIN employee e ON lr.employee_id = e.id 
+                WHERE e.id IS NULL
+            """)).fetchall()
+            
+            if orphaned_leave_requests:
+                result += f"<p>Orphaned leave_requests records: {[r[0] for r in orphaned_leave_requests]}</p>"
+            else:
+                result += "<p>No orphaned leave_requests records</p>"
+        except Exception as e:
+            result += f"<p>Error checking leave_requests: {e}</p>"
+        
+        # Check employee ID mapping completeness
+        result += "<h2>Employee ID Mapping</h2>"
+        result += f"<p>Total employees in mapping: {len(employee_id_mapping) if 'employee_id_mapping' in locals() else 'N/A'}</p>"
+        
+        # Show first few mappings
+        if 'employee_id_mapping' in locals():
+            result += "<p>Sample mappings (old_id → new_id):</p><ul>"
+            for i, (old_id, new_id) in enumerate(list(employee_id_mapping.items())[:10]):
+                result += f"<li>{old_id} → {new_id}</li>"
+            result += "</ul>"
         
         return result
         
