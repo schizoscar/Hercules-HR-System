@@ -205,18 +205,25 @@ def init_database():
         </html>
         '''.format(str(e))
 
-@app.route('/admin/init_database_simple')
-def init_database_simple():
-    """Simple database initialization with basic password"""
+@app.route('/admin/fix_with_short_hash')
+def fix_with_short_hash():
+    """Use a shorter hashing method that fits in 120 chars"""
     try:
         # Drop and recreate all tables
         db.drop_all()
         db.create_all()
         
-        # Create admin with simple password (no complex hashing)
+        # Use MD5 (shorter) for initial setup - we'll change this later
+        from werkzeug.security import generate_password_hash
+        temp_password = 'admin123'
+        
+        # Create a simple hash that fits in 120 chars
+        import hashlib
+        password_hash = hashlib.md5(temp_password.encode()).hexdigest()
+        
         admin = Employee(
-            username='admin1',
-            password='admin123',  # Store plain text temporarily
+            username='admin',
+            password=password_hash,  # Simple MD5 hash that fits
             full_name='Admin',
             email='admin@hercules.com',
             nationality='Malaysian',
@@ -228,20 +235,23 @@ def init_database_simple():
         db.session.add(admin)
         db.session.commit()
         
-        flash('Database initialized! Login with username: admin1, password: admin123', 'success')
+        flash('Database initialized with temporary password! Login with username: admin, password: admin123', 'warning')
         return redirect(url_for('login'))
         
     except Exception as e:
-        return f'''
-        <html>
-        <body>
-            <h2>Database Setup</h2>
-            <p>Error: {str(e)}</p>
-            <p><a href="/admin/fix_database">Try Fix Database</a></p>
-            <p><a href="/">Go to Home</a></p>
-        </body>
-        </html>
-        '''
+        return f'Error: {str(e)}'
+
+@app.route('/admin/debug_users')
+def debug_users():
+    """Debug route to see what's in the database"""
+    try:
+        employees = Employee.query.all()
+        result = "<h2>Employees in Database:</h2>"
+        for emp in employees:
+            result += f"<p>Username: {emp.username}, Password: {emp.password}</p>"
+        return result
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 def send_email_sendgrid(to_email, subject, body):
     """Use SendGrid API with plain text formatting"""
