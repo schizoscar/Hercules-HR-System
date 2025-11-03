@@ -205,6 +205,44 @@ def init_database():
         </html>
         '''.format(str(e))
 
+@app.route('/admin/init_database_simple')
+def init_database_simple():
+    """Simple database initialization with basic password"""
+    try:
+        # Drop and recreate all tables
+        db.drop_all()
+        db.create_all()
+        
+        # Create admin with simple password (no complex hashing)
+        admin = Employee(
+            username='admin1',
+            password='admin123',  # Store plain text temporarily
+            full_name='Admin',
+            email='admin@hercules.com',
+            nationality='Malaysian',
+            employee_id='ADMIN001',
+            is_admin=True,
+            user_type='admin',
+            date_joined=datetime.now().date()
+        )
+        db.session.add(admin)
+        db.session.commit()
+        
+        flash('Database initialized! Login with username: admin1, password: admin123', 'success')
+        return redirect(url_for('login'))
+        
+    except Exception as e:
+        return f'''
+        <html>
+        <body>
+            <h2>Database Setup</h2>
+            <p>Error: {str(e)}</p>
+            <p><a href="/admin/fix_database">Try Fix Database</a></p>
+            <p><a href="/">Go to Home</a></p>
+        </body>
+        </html>
+        '''
+
 def send_email_sendgrid(to_email, subject, body):
     """Use SendGrid API with plain text formatting"""
     try:
