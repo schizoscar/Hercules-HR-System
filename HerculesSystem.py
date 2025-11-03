@@ -85,12 +85,13 @@ app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'
 app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
 """
 
+app.config['SENDGRID_API_KEY'] = os.environ.get('SENDGRID_API_KEY')
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'hrdeptherculesengineering@gmail.com'
-app.config['MAIL_PASSWORD'] = 'uvfg agdq iadz grpt'
-app.config['MAIL_DEFAULT_SENDER'] = 'hrdeptherculesengineering@gmail.com'
+app.config['MAIL_USERNAME'] = 'itdepthercules@gmail.com'
+app.config['MAIL_PASSWORD'] = 'ezjh afdo dsqa efzn'
+app.config['MAIL_DEFAULT_SENDER'] = 'itdepthercules@gmail.com'
 
 # Configuration for leave file uploads
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
@@ -152,6 +153,43 @@ def send_email_async(to, subject, body):
     thread.daemon = True
     thread.start()
     return True  # Return immediately
+
+def send_email_sendgrid(to_email, subject, body):
+    """Use SendGrid API instead of SMTP"""
+    try:
+        response = requests.post(
+            'https://api.sendgrid.com/v3/mail/send',
+            headers={
+                'Authorization': f'Bearer {app.config["SENDGRID_API_KEY"]}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'personalizations': [{
+                    'to': [{'email': to_email}]
+                }],
+                'from': {
+                    'email': app.config['MAIL_DEFAULT_SENDER'],
+                    'name': 'Hercules IT Department'
+                },
+                'subject': subject,
+                'content': [{
+                    'type': 'text/plain',
+                    'value': body
+                }]
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 202:
+            print(f"✓ Email sent to {to_email} via SendGrid")
+            return True
+        else:
+            print(f"✗ SendGrid error: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"✗ SendGrid exception: {e}")
+        return False
 
 def send_leave_status_email(employee, leave_request, status):
     """Send email about leave status"""
@@ -1440,12 +1478,15 @@ Login Details:
 • Portal: {server_url}
 
 Best regards,
-Hercules IT Department"""
+Hercules HR Department"""
         
-        # Use async version for this problematic route
-        send_email_async(test_employee.email, subject, body)
+        # Use SendGrid instead of SMTP
+        email_sent = send_email_sendgrid(test_employee.email, subject, body)
         
-        flash(f'Password reset! Email queued for {test_employee.email}. Temp password: {temp_password}', 'success')
+        if email_sent:
+            flash(f'Password reset! Email sent to {test_employee.email}', 'success')
+        else:
+            flash(f'Password reset! Email failed, but temp password: {temp_password}', 'warning')
             
     except Exception as e:
         db.session.rollback()
