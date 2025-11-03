@@ -68,7 +68,7 @@ logging.basicConfig(
         logging.FileHandler('hr_system.log')  # Save to file
     ]
 )
-
+"""
 # Email configuration
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
@@ -76,6 +76,14 @@ app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = 'scarletsumirepoh@gmail.com'
 app.config['MAIL_PASSWORD'] = 'ipfo egit wyrk uzdb'
 app.config['MAIL_DEFAULT_SENDER'] = 'scarletsumirepoh.email@gmail.com'
+"""
+
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'hrdeptherculesengineering@gmail.com'
+app.config['MAIL_PASSWORD'] = 'uvfg agdq iadz grpt'
+app.config['MAIL_DEFAULT_SENDER'] = 'hrdeptherculesengineering@gmail.com'
 
 # Configuration for leave file uploads
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
