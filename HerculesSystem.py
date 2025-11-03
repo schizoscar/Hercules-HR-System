@@ -205,25 +205,25 @@ def init_database():
         </html>
         '''.format(str(e))
 
-@app.route('/admin/fix_with_short_hash')
-def fix_with_short_hash():
-    """Use a shorter hashing method that fits in 120 chars"""
+@app.route('/admin/fix_proper_hash')
+def fix_proper_hash():
+    """Use proper werkzeug hashing that matches your login system"""
     try:
-        # Drop and recreate all tables
+        # Drop and recreate all tables to clear any existing data
         db.drop_all()
         db.create_all()
         
-        # Use MD5 (shorter) for initial setup - we'll change this later
+        # Use werkzeug's generate_password_hash but force a shorter method
         from werkzeug.security import generate_password_hash
-        temp_password = 'admin123'
         
-        # Create a simple hash that fits in 120 chars
-        import hashlib
-        password_hash = hashlib.md5(temp_password.encode()).hexdigest()
+        # Use 'pbkdf2:sha256' method which produces shorter hashes
+        password_hash = generate_password_hash('admin123', method='pbkdf2:sha256', salt_length=8)
+        
+        print(f"Password hash length: {len(password_hash)}")  # Debug
         
         admin = Employee(
-            username='admin',
-            password=password_hash,  # Simple MD5 hash that fits
+            username='admin1',
+            password=password_hash,
             full_name='Admin',
             email='admin@hercules.com',
             nationality='Malaysian',
@@ -235,11 +235,39 @@ def fix_with_short_hash():
         db.session.add(admin)
         db.session.commit()
         
-        flash('Database initialized with temporary password! Login with username: admin, password: admin123', 'warning')
+        flash('Database initialized! Login with username: admin1, password: admin123', 'success')
         return redirect(url_for('login'))
         
     except Exception as e:
         return f'Error: {str(e)}'
+
+@app.route('/admin/test_login')
+def test_login():
+    """Test why login isn't working"""
+    try:
+        # Test both possible admin usernames
+        admin = Employee.query.filter_by(username='admin1').first()
+        if not admin:
+            admin = Employee.query.filter_by(username='admin').first()
+        
+        if not admin:
+            return "No admin user found!"
+        
+        from werkzeug.security import check_password_hash
+        
+        result = f"""
+        <h2>Login Debug Info</h2>
+        <p>Admin username: {admin.username}</p>
+        <p>Password in DB: {admin.password}</p>
+        <p>Password length: {len(admin.password)}</p>
+        <p>Hash method: {admin.password.split('$')[0] if '$' in admin.password else 'Unknown'}</p>
+        <p>Check 'admin123': {check_password_hash(admin.password, 'admin123')}</p>
+        <p>Check 'password': {check_password_hash(admin.password, 'password')}</p>
+        <p>Check empty: {check_password_hash(admin.password, '')}</p>
+        """
+        return result
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 @app.route('/admin/debug_users')
 def debug_users():
