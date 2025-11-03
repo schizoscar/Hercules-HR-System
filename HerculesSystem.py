@@ -1,5 +1,5 @@
 import requests
-from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file, session, jsonify, cli
+from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file, session, jsonify, cli, copy_current_request_context
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import aliased
@@ -32,6 +32,7 @@ import pytz
 from pytz import timezone
 import sys
 import werkzeug.serving
+import threading
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
@@ -124,6 +125,33 @@ def send_email(to_email, subject, body):
     except Exception as e:
         print(f"Error sending email to {to_email}: {str(e)}")
         return False
+
+def send_email_async(to, subject, body):
+    """Send email in background thread to avoid timeouts"""
+    @copy_current_request_context
+    def send():
+        try:
+            # Use your existing email function or direct SMTP
+            msg = Message(
+                subject=subject,
+                recipients=[to],
+                body=body,
+                sender=app.config['MAIL_DEFAULT_SENDER']
+            )
+            
+            # If you're using Flask-Mail
+            mail.send(msg)
+            print(f"✓ Email sent to {to}")
+            return True
+        except Exception as e:
+            print(f"✗ Failed to send email to {to}: {e}")
+            return False
+    
+    # Start in background thread
+    thread = threading.Thread(target=send)
+    thread.daemon = True
+    thread.start()
+    return True  # Return immediately
 
 def send_leave_status_email(employee, leave_request, status):
     """Send email about leave status"""
@@ -1389,48 +1417,35 @@ def email_gone_online_test():
         flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
 
-    # Find your test employee
     test_employee = Employee.query.filter_by(email="scarletsumirepoh@gmail.com").first()
     if not test_employee:
         flash('Test employee not found.', 'danger')
         return redirect(url_for('dashboard'))
 
     server_url = "https://hercules-hr-system.onrender.com/"
-
-    # Generate temp password only for test employee
     temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
     test_employee.password = generate_password_hash(temp_password)
 
     try:
         db.session.commit()
         
-        # Send email only to test employee
         subject = "🎉 TEST - Hercules HR System is Live!"
-        body = f"""
-Dear {test_employee.full_name},
+        body = f"""Dear {test_employee.full_name},
 
 *** THIS IS A TEST EMAIL ***
 
-Great news! The Hercules HR System is now online and accessible from anywhere!
-
-🔗 Your New Login Portal:
-{server_url}
-
-👤 Your Login Details:
+Login Details:
 • Username: {test_employee.username}
 • Temporary Password: {temp_password}
-
-Please log in and update your password immediately.
+• Portal: {server_url}
 
 Best regards,
-Hercules HR Department
-"""
-        email_sent = send_email(test_employee.email, subject, body)
+Hercules IT Department"""
         
-        if email_sent:
-            flash(f'Test email sent successfully to {test_employee.email}', 'success')
-        else:
-            flash(f'Failed to send test email to {test_employee.email}', 'warning')
+        # Use async version for this problematic route
+        send_email_async(test_employee.email, subject, body)
+        
+        flash(f'Password reset! Email queued for {test_employee.email}. Temp password: {temp_password}', 'success')
             
     except Exception as e:
         db.session.rollback()
