@@ -1873,16 +1873,19 @@ def import_data():
             'time_tracking': 0
         }
 
+        # Create ID mapping to handle conflicts
+        employee_id_mapping = {}
+
         # Disable autoflush to prevent premature commits
         with db.session.no_autoflush:
 
-            # STEP 1: Import Employees (base table)
+            # STEP 1: Import Employees (base table) - let database assign new IDs
             print("Importing employees...")
             for emp_data in data.get('employees', []):
                 existing = Employee.query.filter_by(email=emp_data['email']).first()
                 if not existing:
                     employee = Employee(
-                        id=emp_data['id'],  # Preserve original ID
+                        # Don't set ID - let database auto-generate
                         username=emp_data['username'],
                         password=emp_data['password'],
                         full_name=emp_data['full_name'],
@@ -1900,11 +1903,19 @@ def import_data():
                         basic_salary=emp_data['basic_salary']
                     )
                     db.session.add(employee)
+                    db.session.flush()  # Get the new ID without committing
+                    
+                    # Store mapping from old ID to new ID
+                    old_id = emp_data['id']
+                    new_id = employee.id
+                    employee_id_mapping[old_id] = new_id
+                    
                     imported_counts['employees'] += 1
 
             # Commit employees first to establish foreign key relationships
             db.session.commit()
             print(f"Imported {imported_counts['employees']} employees")
+            print(f"ID mapping: {employee_id_mapping}")
 
             # STEP 2: Import Payroll Settings (independent table)
             print("Importing payroll settings...")
@@ -1940,155 +1951,172 @@ def import_data():
                     db.session.add(component)
                     imported_counts['payroll_components'] += 1
 
-            # STEP 4: Import Leave Balances (depends on employees)
+            # STEP 4: Import Leave Balances (depends on employees) - use ID mapping
             print("Importing leave balances...")
             for balance_data in data.get('leave_balances', []):
                 existing = LeaveBalance.query.filter_by(id=balance_data['id']).first()
                 if not existing:
-                    balance = LeaveBalance(
-                        id=balance_data['id'],
-                        employee_id=balance_data['employee_id'],
-                        leave_type=balance_data['leave_type'],
-                        total_days=balance_data['total_days'],
-                        used_days=balance_data['used_days'],
-                        remaining_days=balance_data['remaining_days'],
-                        updated_at=datetime.fromisoformat(balance_data['updated_at']) if balance_data['updated_at'] else None
-                    )
-                    db.session.add(balance)
-                    imported_counts['leave_balances'] += 1
+                    new_employee_id = employee_id_mapping.get(balance_data['employee_id'])
+                    if new_employee_id:
+                        balance = LeaveBalance(
+                            id=balance_data['id'],
+                            employee_id=new_employee_id,
+                            leave_type=balance_data['leave_type'],
+                            total_days=balance_data['total_days'],
+                            used_days=balance_data['used_days'],
+                            remaining_days=balance_data['remaining_days'],
+                            updated_at=datetime.fromisoformat(balance_data['updated_at']) if balance_data['updated_at'] else None
+                        )
+                        db.session.add(balance)
+                        imported_counts['leave_balances'] += 1
 
-            # STEP 5: Import Employee Payroll Adjustments (depends on employees)
+            # STEP 5: Import Employee Payroll Adjustments (depends on employees) - use ID mapping
             print("Importing employee payroll adjustments...")
             for adjustment_data in data.get('employee_payroll_adjustments', []):
                 existing = EmployeePayrollAdjustment.query.filter_by(id=adjustment_data['id']).first()
                 if not existing:
-                    adjustment = EmployeePayrollAdjustment(
-                        id=adjustment_data['id'],
-                        employee_id=adjustment_data['employee_id'],
-                        pay_period=adjustment_data['pay_period'],
-                        adjustment_type=adjustment_data['adjustment_type'],
-                        amount=adjustment_data['amount'],
-                        description=adjustment_data['description'],
-                        created_by=adjustment_data['created_by'],
-                        created_at=datetime.fromisoformat(adjustment_data['created_at']) if adjustment_data['created_at'] else None,
-                        updated_at=datetime.fromisoformat(adjustment_data['updated_at']) if adjustment_data['updated_at'] else None
-                    )
-                    db.session.add(adjustment)
-                    imported_counts['employee_payroll_adjustments'] += 1
+                    new_employee_id = employee_id_mapping.get(adjustment_data['employee_id'])
+                    if new_employee_id:
+                        adjustment = EmployeePayrollAdjustment(
+                            id=adjustment_data['id'],
+                            employee_id=new_employee_id,
+                            pay_period=adjustment_data['pay_period'],
+                            adjustment_type=adjustment_data['adjustment_type'],
+                            amount=adjustment_data['amount'],
+                            description=adjustment_data['description'],
+                            created_by=adjustment_data['created_by'],
+                            created_at=datetime.fromisoformat(adjustment_data['created_at']) if adjustment_data['created_at'] else None,
+                            updated_at=datetime.fromisoformat(adjustment_data['updated_at']) if adjustment_data['updated_at'] else None
+                        )
+                        db.session.add(adjustment)
+                        imported_counts['employee_payroll_adjustments'] += 1
 
-            # STEP 6: Import Payroll Audit Trail (depends on employees)
+            # STEP 6: Import Payroll Audit Trail (depends on employees) - use ID mapping
             print("Importing payroll audit trail...")
             for audit_data in data.get('payroll_audit_trail', []):
                 existing = PayrollAuditTrail.query.filter_by(id=audit_data['id']).first()
                 if not existing:
-                    audit = PayrollAuditTrail(
-                        id=audit_data['id'],
-                        employee_id=audit_data['employee_id'],
-                        pay_period=audit_data['pay_period'],
-                        action=audit_data['action'],
-                        field_name=audit_data['field_name'],
-                        old_value=audit_data['old_value'],
-                        new_value=audit_data['new_value'],
-                        comment=audit_data['comment'],
-                        performed_by=audit_data['performed_by'],
-                        performed_at=datetime.fromisoformat(audit_data['performed_at']) if audit_data['performed_at'] else None
-                    )
-                    db.session.add(audit)
-                    imported_counts['payroll_audit_trail'] += 1
+                    new_employee_id = employee_id_mapping.get(audit_data['employee_id'])
+                    new_performed_by = employee_id_mapping.get(audit_data['performed_by'])
+                    if new_employee_id and new_performed_by:
+                        audit = PayrollAuditTrail(
+                            id=audit_data['id'],
+                            employee_id=new_employee_id,
+                            pay_period=audit_data['pay_period'],
+                            action=audit_data['action'],
+                            field_name=audit_data['field_name'],
+                            old_value=audit_data['old_value'],
+                            new_value=audit_data['new_value'],
+                            comment=audit_data['comment'],
+                            performed_by=new_performed_by,
+                            performed_at=datetime.fromisoformat(audit_data['performed_at']) if audit_data['performed_at'] else None
+                        )
+                        db.session.add(audit)
+                        imported_counts['payroll_audit_trail'] += 1
 
-            # STEP 7: Import Leave Requests (depends on employees)
+            # STEP 7: Import Leave Requests (depends on employees) - use ID mapping
             print("Importing leave requests...")
             for leave_data in data.get('leave_requests', []):
                 existing = LeaveRequest.query.filter_by(id=leave_data['id']).first()
                 if not existing:
-                    leave = LeaveRequest(
-                        id=leave_data['id'],
-                        employee_id=leave_data['employee_id'],
-                        start_date=datetime.fromisoformat(leave_data['start_date']).date() if leave_data['start_date'] else None,
-                        end_date=datetime.fromisoformat(leave_data['end_date']).date() if leave_data['end_date'] else None,
-                        leave_type=leave_data['leave_type'],
-                        reason=leave_data['reason'],
-                        attachment_filename=leave_data['attachment_filename'],
-                        status=leave_data['status'],
-                        days_requested=leave_data['days_requested'],
-                        created_at=datetime.fromisoformat(leave_data['created_at']) if leave_data['created_at'] else None,
-                        approved_at=datetime.fromisoformat(leave_data['approved_at']) if leave_data['approved_at'] else None,
-                        approved_by_id=leave_data['approved_by_id']
-                    )
-                    db.session.add(leave)
-                    imported_counts['leave_requests'] += 1
+                    new_employee_id = employee_id_mapping.get(leave_data['employee_id'])
+                    new_approved_by = employee_id_mapping.get(leave_data['approved_by_id']) if leave_data['approved_by_id'] else None
+                    if new_employee_id:
+                        leave = LeaveRequest(
+                            id=leave_data['id'],
+                            employee_id=new_employee_id,
+                            start_date=datetime.fromisoformat(leave_data['start_date']).date() if leave_data['start_date'] else None,
+                            end_date=datetime.fromisoformat(leave_data['end_date']).date() if leave_data['end_date'] else None,
+                            leave_type=leave_data['leave_type'],
+                            reason=leave_data['reason'],
+                            attachment_filename=leave_data['attachment_filename'],
+                            status=leave_data['status'],
+                            days_requested=leave_data['days_requested'],
+                            created_at=datetime.fromisoformat(leave_data['created_at']) if leave_data['created_at'] else None,
+                            approved_at=datetime.fromisoformat(leave_data['approved_at']) if leave_data['approved_at'] else None,
+                            approved_by_id=new_approved_by
+                        )
+                        db.session.add(leave)
+                        imported_counts['leave_requests'] += 1
 
-            # STEP 8: Import Leave Balance History (depends on employees)
+            # STEP 8: Import Leave Balance History (depends on employees) - use ID mapping
             print("Importing leave balance history...")
             for history_data in data.get('leave_balance_history', []):
                 existing = LeaveBalanceHistory.query.filter_by(id=history_data['id']).first()
                 if not existing:
-                    history = LeaveBalanceHistory(
-                        id=history_data['id'],
-                        employee_id=history_data['employee_id'],
-                        admin_id=history_data['admin_id'],
-                        leave_type=history_data['leave_type'],
-                        old_total=history_data['old_total'],
-                        new_total=history_data['new_total'],
-                        old_used=history_data['old_used'],
-                        new_used=history_data['new_used'],
-                        old_remaining=history_data['old_remaining'],
-                        new_remaining=history_data['new_remaining'],
-                        comment=history_data['comment'],
-                        created_at=datetime.fromisoformat(history_data['created_at']) if history_data['created_at'] else None
-                    )
-                    db.session.add(history)
-                    imported_counts['leave_balance_history'] += 1
+                    new_employee_id = employee_id_mapping.get(history_data['employee_id'])
+                    new_admin_id = employee_id_mapping.get(history_data['admin_id'])
+                    if new_employee_id and new_admin_id:
+                        history = LeaveBalanceHistory(
+                            id=history_data['id'],
+                            employee_id=new_employee_id,
+                            admin_id=new_admin_id,
+                            leave_type=history_data['leave_type'],
+                            old_total=history_data['old_total'],
+                            new_total=history_data['new_total'],
+                            old_used=history_data['old_used'],
+                            new_used=history_data['new_used'],
+                            old_remaining=history_data['old_remaining'],
+                            new_remaining=history_data['new_remaining'],
+                            comment=history_data['comment'],
+                            created_at=datetime.fromisoformat(history_data['created_at']) if history_data['created_at'] else None
+                        )
+                        db.session.add(history)
+                        imported_counts['leave_balance_history'] += 1
 
-            # STEP 9: Import Payroll (depends on employees)
+            # STEP 9: Import Payroll (depends on employees) - use ID mapping
             print("Importing payroll...")
             for payroll_data in data.get('payroll', []):
                 existing = Payroll.query.filter_by(id=payroll_data['id']).first()
                 if not existing:
-                    payroll = Payroll(
-                        id=payroll_data['id'],
-                        employee_id=payroll_data['employee_id'],
-                        pay_period=payroll_data['pay_period'],
-                        basic_salary=payroll_data['basic_salary'],
-                        overtime_hours=payroll_data['overtime_hours'],
-                        overtime_pay=payroll_data['overtime_pay'],
-                        bonuses=payroll_data['bonuses'],
-                        unpaid_leave_deduction=payroll_data['unpaid_leave_deduction'],
-                        epf_employee=payroll_data['epf_employee'],
-                        epf_employer=payroll_data['epf_employer'],
-                        socso_employee=payroll_data['socso_employee'],
-                        socso_employer=payroll_data['socso_employer'],
-                        eis_employee=payroll_data['eis_employee'],
-                        eis_employer=payroll_data['eis_employer'],
-                        tax_deduction=payroll_data['tax_deduction'],
-                        other_deductions=payroll_data['other_deductions'],
-                        total_deductions=payroll_data['total_deductions'],
-                        net_salary=payroll_data['net_salary'],
-                        status=payroll_data['status'],
-                        created_at=datetime.fromisoformat(payroll_data['created_at']) if payroll_data['created_at'] else None,
-                        processed_at=datetime.fromisoformat(payroll_data['processed_at']) if payroll_data['processed_at'] else None
-                    )
-                    db.session.add(payroll)
-                    imported_counts['payroll'] += 1
+                    new_employee_id = employee_id_mapping.get(payroll_data['employee_id'])
+                    if new_employee_id:
+                        payroll = Payroll(
+                            id=payroll_data['id'],
+                            employee_id=new_employee_id,
+                            pay_period=payroll_data['pay_period'],
+                            basic_salary=payroll_data['basic_salary'],
+                            overtime_hours=payroll_data['overtime_hours'],
+                            overtime_pay=payroll_data['overtime_pay'],
+                            bonuses=payroll_data['bonuses'],
+                            unpaid_leave_deduction=payroll_data['unpaid_leave_deduction'],
+                            epf_employee=payroll_data['epf_employee'],
+                            epf_employer=payroll_data['epf_employer'],
+                            socso_employee=payroll_data['socso_employee'],
+                            socso_employer=payroll_data['socso_employer'],
+                            eis_employee=payroll_data['eis_employee'],
+                            eis_employer=payroll_data['eis_employer'],
+                            tax_deduction=payroll_data['tax_deduction'],
+                            other_deductions=payroll_data['other_deductions'],
+                            total_deductions=payroll_data['total_deductions'],
+                            net_salary=payroll_data['net_salary'],
+                            status=payroll_data['status'],
+                            created_at=datetime.fromisoformat(payroll_data['created_at']) if payroll_data['created_at'] else None,
+                            processed_at=datetime.fromisoformat(payroll_data['processed_at']) if payroll_data['processed_at'] else None
+                        )
+                        db.session.add(payroll)
+                        imported_counts['payroll'] += 1
 
-            # STEP 10: Import Time Tracking (depends on employees - LAST)
+            # STEP 10: Import Time Tracking (depends on employees - LAST) - use ID mapping
             print("Importing time tracking...")
             for entry_data in data.get('time_tracking', []):
                 existing = TimeTracking.query.filter_by(id=entry_data['id']).first()
                 if not existing:
-                    entry = TimeTracking(
-                        id=entry_data['id'],
-                        employee_id=entry_data['employee_id'],
-                        action_type=entry_data['action_type'],
-                        timestamp=datetime.fromisoformat(entry_data['timestamp']) if entry_data['timestamp'] else None,
-                        latitude=entry_data['latitude'],
-                        longitude=entry_data['longitude'],
-                        address=entry_data['address'],
-                        status=entry_data['status'],
-                        ip_address=entry_data['ip_address']
-                    )
-                    db.session.add(entry)
-                    imported_counts['time_tracking'] += 1
+                    new_employee_id = employee_id_mapping.get(entry_data['employee_id'])
+                    if new_employee_id:
+                        entry = TimeTracking(
+                            id=entry_data['id'],
+                            employee_id=new_employee_id,
+                            action_type=entry_data['action_type'],
+                            timestamp=datetime.fromisoformat(entry_data['timestamp']) if entry_data['timestamp'] else None,
+                            latitude=entry_data['latitude'],
+                            longitude=entry_data['longitude'],
+                            address=entry_data['address'],
+                            status=entry_data['status'],
+                            ip_address=entry_data['ip_address']
+                        )
+                        db.session.add(entry)
+                        imported_counts['time_tracking'] += 1
 
         # Final commit
         db.session.commit()
