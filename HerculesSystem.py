@@ -1382,6 +1382,105 @@ def calculate_unpaid_leave_deduction(salary, unpaid_days):
     daily_rate = salary / working_days
     return round(daily_rate * Decimal(str(unpaid_days)), 2)
 
+@app.route('/admin/email_gone_online_test')
+@login_required
+def email_gone_online_test():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    employees = Employee.query.all()
+    if not employees:
+        flash('No employees found to email.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    server_url = "https://hercules-hr-system.onrender.com/"  # public URL
+
+    temp_passwords = {}
+    reset_count = 0
+    email_success_count = 0
+    email_failed_count = 0
+
+    # Step 1: Generate temporary passwords and update DB
+    for employee in employees:
+        temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
+        employee.password = generate_password_hash(temp_password)
+        temp_passwords[employee.id] = temp_password
+        reset_count += 1
+
+    # Commit all password changes at once
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to reset passwords: {str(e)}", 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Step 2: Send emails - ONLY to scarletsumirepoh@gmail.com for testing
+    for employee in employees:
+        # Only send to the test email address
+        if employee.email != "scarletsumirepoh@gmail.com":
+            continue
+            
+        try:
+            temp_password = temp_passwords[employee.id]
+            subject = "🎉 Hercules HR System is Live!"
+            body = f"""
+Dear {employee.full_name},
+
+Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
+
+🔗 Your New Login Portal:
+{server_url}
+
+👤 Your Login Details:
+• Username: {employee.username}
+• Temporary Password: {temp_password}
+
+🚀 What's New:
+• Access the system from any device with internet
+• No more local network restrictions
+• Same great features, now with more flexibility
+
+📱 Access Anywhere:
+You can now access the system from:
+• Office computers
+• Home laptops
+• Mobile phones
+• Tablets
+
+If you experience any issues accessing the system or have questions, please contact the HR department.
+
+Best regards,
+Hercules IT Department
+"""
+            email_sent = send_email(employee.email, subject, body)
+            if email_sent:
+                email_success_count += 1
+                print(f"✓ Email sent to {employee.email}")
+            else:
+                email_failed_count += 1
+                print(f"✗ Failed to send email to {employee.email}")
+
+        except Exception as e:
+            print(f"Error sending email to {employee.email}: {e}")
+            email_failed_count += 1
+            continue
+
+    # Flash summary
+    flash_message = f"""
+Password reset and emailing completed!
+• {reset_count} passwords reset
+• {email_success_count} emails sent successfully
+• {email_failed_count} emails failed
+"""
+    if email_failed_count > 0:
+        flash(flash_message, 'warning')
+    else:
+        flash(flash_message, 'success')
+
+    return redirect(url_for('dashboard'))
+
 @app.route('/admin/email_gone_online')
 @login_required
 def email_gone_online():
@@ -1394,7 +1493,7 @@ def email_gone_online():
         flash('No employees found to email.', 'warning')
         return redirect(url_for('dashboard'))
 
-    server_url = "https://hr.hercules-engineering.com"  # public URL
+    server_url = "https://hercules-hr-system.onrender.com/"  # public URL
 
     temp_passwords = {}
     reset_count = 0
@@ -1448,7 +1547,7 @@ You can now access the system from:
 If you experience any issues accessing the system or have questions, please contact the HR department.
 
 Best regards,
-Hercules HR Department
+Hercules IT Department
 """
             email_sent = send_email(employee.email, subject, body)
             if email_sent:
@@ -2599,7 +2698,7 @@ def add_employee():
         db.session.commit()
         
         # Send email (your existing email code)
-        server_url = "https://hr.hercules-engineering.com"
+        server_url = "https://hercules-hr-system.onrender.com/"
         subject = "Your Hercules HR Account Has Been Created"
         body = f"""
 Dear {form.full_name.data},
@@ -2691,7 +2790,7 @@ def bulk_add_employees():
                 success_count += 1
                 
                 # Send email 
-                server_url = "https://hr.hercules-engineering.com"
+                server_url = "https://hercules-hr-system.onrender.com/"
                 subject = "Your Hercules HR Account Has Been Created"
                 body = f"""
 Dear {full_name},
@@ -3371,7 +3470,7 @@ def reset_password(employee_id):
         return redirect(url_for('manage_employees'))
 
     # Send email after commit
-    server_url = "https://hr.hercules-engineering.com"
+    server_url = "https://hercules-hr-system.onrender.com/"
     subject = "Your Hercules HR Password Has Been Reset"
     body = f"""
 Dear {employee.full_name},
