@@ -39,11 +39,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # --- Render/Proxy Safe Config ---
-app.config['SESSION_COOKIE_SECURE'] = False  # important for Render proxy
+app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = "None"
-app.config['REMEMBER_COOKIE_SECURE'] = False
+app.config['REMEMBER_COOKIE_SECURE'] = True
 app.config['PREFERRED_URL_SCHEME'] = 'https'
-
 
 # Define Malaysia timezone
 MYT = pytz.timezone('Asia/Kuala_Lumpur')
@@ -658,11 +657,13 @@ def load_user(user_id):
 def inject_now():
     return {'now': datetime.utcnow()}
 
+"""
 @app.before_request
 def before_request():
     if request.url.startswith('https://'):
         new_url = request.url.replace('https://', 'http://', 1)
         return redirect(new_url, code=301)
+
 
 original_handle = werkzeug.serving.WSGIRequestHandler.handle
 
@@ -685,7 +686,7 @@ def handle_corrupted_headers(self):
         raise
 
 werkzeug.serving.WSGIRequestHandler.handle = handle_corrupted_headers
-
+"""
 def validate_leave_days(leave_type, days_requested):
     """Validate if the requested leave days are within allowed limits"""
     max_limits = {
