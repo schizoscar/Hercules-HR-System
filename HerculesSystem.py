@@ -1463,6 +1463,8 @@ def export_data():
     
     import json
     from datetime import datetime
+    from flask import Response
+    import io
     
     data = {
         'export_date': datetime.now().isoformat(),
@@ -1540,20 +1542,123 @@ def export_data():
                 'processed_at': payroll.processed_at.isoformat() if payroll.processed_at else None
             })
         
-        # Export other tables similarly...
+        # Export Payroll Settings
+        for setting in PayrollSettings.query.all():
+            data['payroll_settings'].append({
+                'id': setting.id,
+                'setting_name': setting.setting_name,
+                'setting_value': setting.setting_value,
+                'description': setting.description,
+                'updated_at': setting.updated_at.isoformat() if setting.updated_at else None,
+                'updated_by': setting.updated_by
+            })
         
-        # Save to JSON file
-        with open('backup.json', 'w') as f:
-            json.dump(data, f, indent=2)
+        # Export Payroll Components
+        for component in PayrollComponent.query.all():
+            data['payroll_components'].append({
+                'id': component.id,
+                'name': component.name,
+                'component_type': component.component_type,
+                'is_active': component.is_active,
+                'calculation_method': component.calculation_method,
+                'default_value': float(component.default_value) if component.default_value else 0,
+                'description': component.description,
+                'created_at': component.created_at.isoformat() if component.created_at else None
+            })
         
-        flash('Data exported successfully to backup.json', 'success')
-        return redirect(url_for('dashboard'))
+        # Export Employee Payroll Adjustments
+        for adjustment in EmployeePayrollAdjustment.query.all():
+            data['employee_payroll_adjustments'].append({
+                'id': adjustment.id,
+                'employee_id': adjustment.employee_id,
+                'pay_period': adjustment.pay_period,
+                'adjustment_type': adjustment.adjustment_type,
+                'amount': float(adjustment.amount) if adjustment.amount else 0,
+                'description': adjustment.description,
+                'created_by': adjustment.created_by,
+                'created_at': adjustment.created_at.isoformat() if adjustment.created_at else None,
+                'updated_at': adjustment.updated_at.isoformat() if adjustment.updated_at else None
+            })
+        
+        # Export Payroll Audit Trail
+        for audit in PayrollAuditTrail.query.all():
+            data['payroll_audit_trail'].append({
+                'id': audit.id,
+                'employee_id': audit.employee_id,
+                'pay_period': audit.pay_period,
+                'action': audit.action,
+                'field_name': audit.field_name,
+                'old_value': audit.old_value,
+                'new_value': audit.new_value,
+                'comment': audit.comment,
+                'performed_by': audit.performed_by,
+                'performed_at': audit.performed_at.isoformat() if audit.performed_at else None
+            })
+        
+        # Export Leave Requests
+        for leave in LeaveRequest.query.all():
+            data['leave_requests'].append({
+                'id': leave.id,
+                'employee_id': leave.employee_id,
+                'start_date': leave.start_date.isoformat() if leave.start_date else None,
+                'end_date': leave.end_date.isoformat() if leave.end_date else None,
+                'leave_type': leave.leave_type,
+                'reason': leave.reason,
+                'attachment_filename': leave.attachment_filename,
+                'status': leave.status,
+                'days_requested': leave.days_requested,
+                'created_at': leave.created_at.isoformat() if leave.created_at else None,
+                'approved_at': leave.approved_at.isoformat() if leave.approved_at else None,
+                'approved_by_id': leave.approved_by_id
+            })
+        
+        # Export Leave Balances
+        for balance in LeaveBalance.query.all():
+            data['leave_balances'].append({
+                'id': balance.id,
+                'employee_id': balance.employee_id,
+                'leave_type': balance.leave_type,
+                'total_days': balance.total_days,
+                'used_days': balance.used_days,
+                'remaining_days': balance.remaining_days,
+                'updated_at': balance.updated_at.isoformat() if balance.updated_at else None
+            })
+        
+        # Export Leave Balance History
+        for history in LeaveBalanceHistory.query.all():
+            data['leave_balance_history'].append({
+                'id': history.id,
+                'employee_id': history.employee_id,
+                'admin_id': history.admin_id,
+                'leave_type': history.leave_type,
+                'old_total': history.old_total,
+                'new_total': history.new_total,
+                'old_used': history.old_used,
+                'new_used': history.new_used,
+                'old_remaining': history.old_remaining,
+                'new_remaining': history.new_remaining,
+                'comment': history.comment,
+                'created_at': history.created_at.isoformat() if history.created_at else None
+            })
+        
+        # Convert to JSON string
+        json_data = json.dumps(data, indent=2)
+        
+        # Create downloadable response
+        return Response(
+            json_data,
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": "attachment; filename=hercules_backup.json",
+                "Content-Type": "application/json"
+            }
+        )
         
     except Exception as e:
         flash(f'Error exporting data: {str(e)}', 'danger')
         return redirect(url_for('dashboard'))
 
-@app.route('/admin/import_data')
+@app.route('/admin/import_data', methods=['GET', 'POST'])
 @login_required
 def import_data():
     if current_user.user_type != 'admin':
@@ -1561,19 +1666,74 @@ def import_data():
         return redirect(url_for('dashboard'))
     
     import json
+    from datetime import datetime
+    
+    if request.method == 'GET':
+        # Show upload form
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Import Data</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; }
+                .upload-form { max-width: 500px; margin: 0 auto; }
+                input[type="file"] { margin: 20px 0; padding: 10px; }
+                input[type="submit"] { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <div class="upload-form">
+                <h2>Import Data from Backup</h2>
+                <form method="POST" enctype="multipart/form-data">
+                    <input type="file" name="backup_file" accept=".json" required>
+                    <br>
+                    <input type="submit" value="Import Data">
+                </form>
+                <p><a href="/dashboard">← Back to Dashboard</a></p>
+            </div>
+        </body>
+        </html>
+        '''
+    
+    # Handle file upload
+    if 'backup_file' not in request.files:
+        flash('No file selected', 'danger')
+        return redirect(request.url)
+    
+    file = request.files['backup_file']
+    if file.filename == '':
+        flash('No file selected', 'danger')
+        return redirect(request.url)
+    
+    if not file.filename.endswith('.json'):
+        flash('Please upload a JSON file', 'danger')
+        return redirect(request.url)
     
     try:
-        with open('backup.json', 'r') as f:
-            data = json.load(f)
+        # Parse JSON data
+        data = json.load(file)
+        
+        imported_counts = {
+            'employees': 0,
+            'time_tracking': 0,
+            'payroll': 0,
+            'payroll_settings': 0,
+            'payroll_components': 0,
+            'employee_payroll_adjustments': 0,
+            'payroll_audit_trail': 0,
+            'leave_requests': 0,
+            'leave_balances': 0,
+            'leave_balance_history': 0
+        }
         
         # Import Employees
-        for emp_data in data['employees']:
-            # Check if employee already exists
+        for emp_data in data.get('employees', []):
             existing = Employee.query.filter_by(email=emp_data['email']).first()
             if not existing:
                 employee = Employee(
                     username=emp_data['username'],
-                    password=emp_data['password'],  # Keep existing hashed password
+                    password=emp_data['password'],
                     full_name=emp_data['full_name'],
                     email=emp_data['email'],
                     nationality=emp_data['nationality'],
@@ -1589,9 +1749,192 @@ def import_data():
                     basic_salary=emp_data['basic_salary']
                 )
                 db.session.add(employee)
+                imported_counts['employees'] += 1
+        
+        # Import Time Tracking
+        for entry_data in data.get('time_tracking', []):
+            existing = TimeTracking.query.filter_by(id=entry_data['id']).first()
+            if not existing:
+                entry = TimeTracking(
+                    id=entry_data['id'],
+                    employee_id=entry_data['employee_id'],
+                    action_type=entry_data['action_type'],
+                    timestamp=datetime.fromisoformat(entry_data['timestamp']) if entry_data['timestamp'] else None,
+                    latitude=entry_data['latitude'],
+                    longitude=entry_data['longitude'],
+                    address=entry_data['address'],
+                    status=entry_data['status'],
+                    ip_address=entry_data['ip_address']
+                )
+                db.session.add(entry)
+                imported_counts['time_tracking'] += 1
+        
+        # Import Payroll
+        for payroll_data in data.get('payroll', []):
+            existing = Payroll.query.filter_by(id=payroll_data['id']).first()
+            if not existing:
+                payroll = Payroll(
+                    id=payroll_data['id'],
+                    employee_id=payroll_data['employee_id'],
+                    pay_period=payroll_data['pay_period'],
+                    basic_salary=payroll_data['basic_salary'],
+                    overtime_hours=payroll_data['overtime_hours'],
+                    overtime_pay=payroll_data['overtime_pay'],
+                    bonuses=payroll_data['bonuses'],
+                    unpaid_leave_deduction=payroll_data['unpaid_leave_deduction'],
+                    epf_employee=payroll_data['epf_employee'],
+                    epf_employer=payroll_data['epf_employer'],
+                    socso_employee=payroll_data['socso_employee'],
+                    socso_employer=payroll_data['socso_employer'],
+                    eis_employee=payroll_data['eis_employee'],
+                    eis_employer=payroll_data['eis_employer'],
+                    tax_deduction=payroll_data['tax_deduction'],
+                    other_deductions=payroll_data['other_deductions'],
+                    total_deductions=payroll_data['total_deductions'],
+                    net_salary=payroll_data['net_salary'],
+                    status=payroll_data['status'],
+                    created_at=datetime.fromisoformat(payroll_data['created_at']) if payroll_data['created_at'] else None,
+                    processed_at=datetime.fromisoformat(payroll_data['processed_at']) if payroll_data['processed_at'] else None
+                )
+                db.session.add(payroll)
+                imported_counts['payroll'] += 1
+        
+        # Import Payroll Settings
+        for setting_data in data.get('payroll_settings', []):
+            existing = PayrollSettings.query.filter_by(id=setting_data['id']).first()
+            if not existing:
+                setting = PayrollSettings(
+                    id=setting_data['id'],
+                    setting_name=setting_data['setting_name'],
+                    setting_value=setting_data['setting_value'],
+                    description=setting_data['description'],
+                    updated_at=datetime.fromisoformat(setting_data['updated_at']) if setting_data['updated_at'] else None,
+                    updated_by=setting_data['updated_by']
+                )
+                db.session.add(setting)
+                imported_counts['payroll_settings'] += 1
+        
+        # Import Payroll Components
+        for component_data in data.get('payroll_components', []):
+            existing = PayrollComponent.query.filter_by(id=component_data['id']).first()
+            if not existing:
+                component = PayrollComponent(
+                    id=component_data['id'],
+                    name=component_data['name'],
+                    component_type=component_data['component_type'],
+                    is_active=component_data['is_active'],
+                    calculation_method=component_data['calculation_method'],
+                    default_value=component_data['default_value'],
+                    description=component_data['description'],
+                    created_at=datetime.fromisoformat(component_data['created_at']) if component_data['created_at'] else None
+                )
+                db.session.add(component)
+                imported_counts['payroll_components'] += 1
+        
+        # Import Employee Payroll Adjustments
+        for adjustment_data in data.get('employee_payroll_adjustments', []):
+            existing = EmployeePayrollAdjustment.query.filter_by(id=adjustment_data['id']).first()
+            if not existing:
+                adjustment = EmployeePayrollAdjustment(
+                    id=adjustment_data['id'],
+                    employee_id=adjustment_data['employee_id'],
+                    pay_period=adjustment_data['pay_period'],
+                    adjustment_type=adjustment_data['adjustment_type'],
+                    amount=adjustment_data['amount'],
+                    description=adjustment_data['description'],
+                    created_by=adjustment_data['created_by'],
+                    created_at=datetime.fromisoformat(adjustment_data['created_at']) if adjustment_data['created_at'] else None,
+                    updated_at=datetime.fromisoformat(adjustment_data['updated_at']) if adjustment_data['updated_at'] else None
+                )
+                db.session.add(adjustment)
+                imported_counts['employee_payroll_adjustments'] += 1
+        
+        # Import Payroll Audit Trail
+        for audit_data in data.get('payroll_audit_trail', []):
+            existing = PayrollAuditTrail.query.filter_by(id=audit_data['id']).first()
+            if not existing:
+                audit = PayrollAuditTrail(
+                    id=audit_data['id'],
+                    employee_id=audit_data['employee_id'],
+                    pay_period=audit_data['pay_period'],
+                    action=audit_data['action'],
+                    field_name=audit_data['field_name'],
+                    old_value=audit_data['old_value'],
+                    new_value=audit_data['new_value'],
+                    comment=audit_data['comment'],
+                    performed_by=audit_data['performed_by'],
+                    performed_at=datetime.fromisoformat(audit_data['performed_at']) if audit_data['performed_at'] else None
+                )
+                db.session.add(audit)
+                imported_counts['payroll_audit_trail'] += 1
+        
+        # Import Leave Requests
+        for leave_data in data.get('leave_requests', []):
+            existing = LeaveRequest.query.filter_by(id=leave_data['id']).first()
+            if not existing:
+                leave = LeaveRequest(
+                    id=leave_data['id'],
+                    employee_id=leave_data['employee_id'],
+                    start_date=datetime.fromisoformat(leave_data['start_date']).date() if leave_data['start_date'] else None,
+                    end_date=datetime.fromisoformat(leave_data['end_date']).date() if leave_data['end_date'] else None,
+                    leave_type=leave_data['leave_type'],
+                    reason=leave_data['reason'],
+                    attachment_filename=leave_data['attachment_filename'],
+                    status=leave_data['status'],
+                    days_requested=leave_data['days_requested'],
+                    created_at=datetime.fromisoformat(leave_data['created_at']) if leave_data['created_at'] else None,
+                    approved_at=datetime.fromisoformat(leave_data['approved_at']) if leave_data['approved_at'] else None,
+                    approved_by_id=leave_data['approved_by_id']
+                )
+                db.session.add(leave)
+                imported_counts['leave_requests'] += 1
+        
+        # Import Leave Balances
+        for balance_data in data.get('leave_balances', []):
+            existing = LeaveBalance.query.filter_by(id=balance_data['id']).first()
+            if not existing:
+                balance = LeaveBalance(
+                    id=balance_data['id'],
+                    employee_id=balance_data['employee_id'],
+                    leave_type=balance_data['leave_type'],
+                    total_days=balance_data['total_days'],
+                    used_days=balance_data['used_days'],
+                    remaining_days=balance_data['remaining_days'],
+                    updated_at=datetime.fromisoformat(balance_data['updated_at']) if balance_data['updated_at'] else None
+                )
+                db.session.add(balance)
+                imported_counts['leave_balances'] += 1
+        
+        # Import Leave Balance History
+        for history_data in data.get('leave_balance_history', []):
+            existing = LeaveBalanceHistory.query.filter_by(id=history_data['id']).first()
+            if not existing:
+                history = LeaveBalanceHistory(
+                    id=history_data['id'],
+                    employee_id=history_data['employee_id'],
+                    admin_id=history_data['admin_id'],
+                    leave_type=history_data['leave_type'],
+                    old_total=history_data['old_total'],
+                    new_total=history_data['new_total'],
+                    old_used=history_data['old_used'],
+                    new_used=history_data['new_used'],
+                    old_remaining=history_data['old_remaining'],
+                    new_remaining=history_data['new_remaining'],
+                    comment=history_data['comment'],
+                    created_at=datetime.fromisoformat(history_data['created_at']) if history_data['created_at'] else None
+                )
+                db.session.add(history)
+                imported_counts['leave_balance_history'] += 1
         
         db.session.commit()
-        flash('Data imported successfully!', 'success')
+        
+        # Create summary message
+        summary = "Data imported successfully!<br>"
+        for table, count in imported_counts.items():
+            if count > 0:
+                summary += f"• {table}: {count} records<br>"
+        
+        flash(summary, 'success')
         return redirect(url_for('dashboard'))
         
     except Exception as e:
