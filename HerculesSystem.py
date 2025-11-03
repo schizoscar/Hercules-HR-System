@@ -38,6 +38,13 @@ app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'hr.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# --- Render/Proxy Safe Config ---
+app.config['SESSION_COOKIE_SECURE'] = False  # important for Render proxy
+app.config['SESSION_COOKIE_SAMESITE'] = "None"
+app.config['REMEMBER_COOKIE_SECURE'] = False
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+
 # Define Malaysia timezone
 MYT = pytz.timezone('Asia/Kuala_Lumpur')
 
@@ -730,6 +737,11 @@ Hercules HR
 @app.route('/')
 def home():
     return render_template('home.html')
+
+@app.route('/test')
+def test():
+    session['test'] = 'ok'
+    return f"Session works: {session.get('test')}"
 
 @app.route('/create_test_users')
 def create_test_users():
