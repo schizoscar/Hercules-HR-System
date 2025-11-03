@@ -2138,6 +2138,249 @@ def import_data():
         flash(f'Error importing data: {str(e)}', 'danger')
         return redirect(url_for('dashboard'))
 
+@app.route('/admin/debug_import')
+@login_required
+def debug_import():
+    """Debug why some tables didn't import"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Count records in each table
+        counts = {
+            'employees': Employee.query.count(),
+            'time_tracking': TimeTracking.query.count(),
+            'leave_requests': LeaveRequest.query.count(),
+            'leave_balances': LeaveBalance.query.count(),
+            'leave_balance_history': LeaveBalanceHistory.query.count(),
+            'payroll': Payroll.query.count(),
+            'payroll_settings': PayrollSettings.query.count(),
+            'payroll_components': PayrollComponent.query.count(),
+            'employee_payroll_adjustments': EmployeePayrollAdjustment.query.count(),
+            'payroll_audit_trail': PayrollAuditTrail.query.count()
+        }
+        
+        result = "<h2>Database Record Counts</h2><table border='1'>"
+        result += "<tr><th>Table</th><th>Count</th></tr>"
+        
+        for table, count in counts.items():
+            result += f"<tr><td>{table}</td><td>{count}</td></tr>"
+        
+        result += "</table>"
+        
+        # Check for specific foreign key issues
+        result += "<h2>Foreign Key Issues</h2>"
+        
+        # Check if there are time_tracking records without employees
+        orphaned_time = db.session.execute("""
+            SELECT tt.employee_id 
+            FROM time_tracking tt 
+            LEFT JOIN employee e ON tt.employee_id = e.id 
+            WHERE e.id IS NULL
+        """).fetchall()
+        
+        if orphaned_time:
+            result += f"<p>Orphaned time_tracking records: {[r[0] for r in orphaned_time]}</p>"
+        
+        return result
+        
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+@app.route('/admin/import_data_final', methods=['GET', 'POST'])
+@login_required
+def import_data_final():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    import json
+    from datetime import datetime
+    
+    if request.method == 'GET':
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Import Data - Final</title>
+            <style>body { font-family: Arial, sans-serif; margin: 40px; }</style>
+        </head>
+        <body>
+            <h2>Import Data from Backup (Final)</h2>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="backup_file" accept=".json" required>
+                <br>
+                <input type="submit" value="Import Data">
+            </form>
+            <p><a href="/dashboard">← Back to Dashboard</a></p>
+        </body>
+        </html>
+        '''
+    
+    file = request.files['backup_file']
+    if file.filename == '' or not file.filename.endswith('.json'):
+        flash('Please upload a JSON file', 'danger')
+        return redirect(request.url)
+    
+    try:
+        data = json.load(file)
+        
+        imported_counts = {
+            'employees': 0, 'time_tracking': 0, 'leave_requests': 0, 
+            'leave_balances': 0, 'leave_balance_history': 0, 'payroll': 0,
+            'payroll_settings': 0, 'payroll_components': 0, 
+            'employee_payroll_adjustments': 0, 'payroll_audit_trail': 0
+        }
+
+        employee_id_mapping = {}
+
+        # STEP 1: Import Employees
+        print("Importing employees...")
+        for emp_data in data.get('employees', []):
+            existing = Employee.query.filter_by(email=emp_data['email']).first()
+            if not existing:
+                employee = Employee(
+                    username=emp_data['username'],
+                    password=emp_data['password'],
+                    full_name=emp_data['full_name'],
+                    email=emp_data['email'],
+                    nationality=emp_data['nationality'],
+                    employee_id=emp_data['employee_id'],
+                    hire_date=datetime.fromisoformat(emp_data['hire_date']) if emp_data['hire_date'] else None,
+                    is_admin=emp_data['is_admin'],
+                    user_type=emp_data['user_type'],
+                    last_clock_in=datetime.fromisoformat(emp_data['last_clock_in']) if emp_data['last_clock_in'] else None,
+                    last_clock_out=datetime.fromisoformat(emp_data['last_clock_out']) if emp_data['last_clock_out'] else None,
+                    last_lunch_start=datetime.fromisoformat(emp_data['last_lunch_start']) if emp_data['last_lunch_start'] else None,
+                    last_lunch_end=datetime.fromisoformat(emp_data['last_lunch_end']) if emp_data['last_lunch_end'] else None,
+                    date_joined=datetime.fromisoformat(emp_data['date_joined']) if emp_data['date_joined'] else None,
+                    basic_salary=emp_data['basic_salary']
+                )
+                db.session.add(employee)
+                db.session.flush()
+                
+                old_id = emp_data['id']
+                new_id = employee.id
+                employee_id_mapping[old_id] = new_id
+                imported_counts['employees'] += 1
+
+        db.session.commit()
+        print(f"Imported {imported_counts['employees']} employees")
+
+        # STEP 2: Import tables that don't have foreign keys first
+        for component_data in data.get('payroll_components', []):
+            existing = PayrollComponent.query.filter_by(id=component_data['id']).first()
+            if not existing:
+                component = PayrollComponent(
+                    id=component_data['id'],
+                    name=component_data['name'],
+                    component_type=component_data['component_type'],
+                    is_active=component_data['is_active'],
+                    calculation_method=component_data['calculation_method'],
+                    default_value=component_data['default_value'],
+                    description=component_data['description'],
+                    created_at=datetime.fromisoformat(component_data['created_at']) if component_data['created_at'] else None
+                )
+                db.session.add(component)
+                imported_counts['payroll_components'] += 1
+
+        # STEP 3: Import tables with foreign keys - with better error handling
+        def import_with_fk_check(table_data, table_name, model_class, id_mapping, required_fk_fields=[]):
+            count = 0
+            for record_data in table_data:
+                existing = model_class.query.filter_by(id=record_data['id']).first()
+                if not existing:
+                    # Check if all required foreign keys exist
+                    fk_valid = True
+                    mapped_data = {}
+                    
+                    for field, value in record_data.items():
+                        if field in required_fk_fields and value is not None:
+                            mapped_value = id_mapping.get(value)
+                            if mapped_value is None:
+                                print(f"Skipping {table_name} record {record_data['id']}: {field} {value} not found in mapping")
+                                fk_valid = False
+                                break
+                            mapped_data[field] = mapped_value
+                        else:
+                            mapped_data[field] = value
+                    
+                    if fk_valid:
+                        try:
+                            # Handle date fields
+                            for field in ['timestamp', 'created_at', 'updated_at', 'performed_at', 'approved_at']:
+                                if field in mapped_data and mapped_data[field]:
+                                    mapped_data[field] = datetime.fromisoformat(mapped_data[field])
+                            
+                            # Handle date-only fields
+                            for field in ['start_date', 'end_date']:
+                                if field in mapped_data and mapped_data[field]:
+                                    mapped_data[field] = datetime.fromisoformat(mapped_data[field]).date()
+                            
+                            record = model_class(**mapped_data)
+                            db.session.add(record)
+                            count += 1
+                        except Exception as e:
+                            print(f"Error creating {table_name} record {record_data['id']}: {e}")
+            
+            return count
+
+        # Import each table with its specific foreign key requirements
+        imported_counts['time_tracking'] = import_with_fk_check(
+            data.get('time_tracking', []), 'time_tracking', TimeTracking, 
+            employee_id_mapping, ['employee_id']
+        )
+        
+        imported_counts['leave_balances'] = import_with_fk_check(
+            data.get('leave_balances', []), 'leave_balances', LeaveBalance,
+            employee_id_mapping, ['employee_id']
+        )
+        
+        imported_counts['leave_requests'] = import_with_fk_check(
+            data.get('leave_requests', []), 'leave_requests', LeaveRequest,
+            employee_id_mapping, ['employee_id']
+        )
+        
+        imported_counts['leave_balance_history'] = import_with_fk_check(
+            data.get('leave_balance_history', []), 'leave_balance_history', LeaveBalanceHistory,
+            employee_id_mapping, ['employee_id', 'admin_id']
+        )
+        
+        imported_counts['payroll'] = import_with_fk_check(
+            data.get('payroll', []), 'payroll', Payroll,
+            employee_id_mapping, ['employee_id']
+        )
+        
+        imported_counts['payroll_settings'] = import_with_fk_check(
+            data.get('payroll_settings', []), 'payroll_settings', PayrollSettings,
+            employee_id_mapping, ['updated_by']
+        )
+        
+        imported_counts['employee_payroll_adjustments'] = import_with_fk_check(
+            data.get('employee_payroll_adjustments', []), 'employee_payroll_adjustments', EmployeePayrollAdjustment,
+            employee_id_mapping, ['employee_id', 'created_by']
+        )
+        
+        imported_counts['payroll_audit_trail'] = import_with_fk_check(
+            data.get('payroll_audit_trail', []), 'payroll_audit_trail', PayrollAuditTrail,
+            employee_id_mapping, ['employee_id', 'performed_by']
+        )
+
+        db.session.commit()
+        
+        summary = "Data imported successfully!<br>"
+        for table, count in imported_counts.items():
+            summary += f"• {table}: {count} records<br>"
+        
+        flash(summary, 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error importing data: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
 @app.route('/admin/email_gone_online_test')
 @login_required
 def email_gone_online_test():
