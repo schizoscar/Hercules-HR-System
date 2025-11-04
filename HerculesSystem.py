@@ -266,6 +266,342 @@ def check_schema():
     except Exception as e:
         return f"Error: {str(e)}"
 
+@app.route('/admin/create_missing_tables')
+@login_required
+def create_missing_tables():
+    """Create any missing database tables"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Create all tables that should exist based on your models
+        db.create_all()
+        
+        # Check which tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        result = "<h2>Database Tables Status</h2>"
+        result += f"<p>All tables created successfully!</p>"
+        result += "<p>Existing tables:</p><ul>"
+        
+        for table in existing_tables:
+            result += f"<li>{table}</li>"
+        
+        result += "</ul>"
+        
+        # Count records in each table
+        result += "<h2>Record Counts After Table Creation</h2><table border='1'>"
+        result += "<tr><th>Table</th><th>Count</th></tr>"
+        
+        tables_to_check = [
+            ('employees', Employee),
+            ('time_tracking', TimeTracking),
+            ('leave_requests', LeaveRequest),
+            ('leave_balances', LeaveBalance),
+            ('leave_balance_history', LeaveBalanceHistory),
+            ('payroll', Payroll),
+            ('payroll_settings', PayrollSettings),
+            ('payroll_components', PayrollComponent),
+            ('employee_payroll_adjustments', EmployeePayrollAdjustment),
+            ('payroll_audit_trail', PayrollAuditTrail)
+        ]
+        
+        for table_name, model in tables_to_check:
+            try:
+                count = model.query.count()
+                result += f"<tr><td>{table_name}</td><td>{count}</td></tr>"
+            except Exception as e:
+                result += f"<tr><td>{table_name}</td><td>Error: {e}</td></tr>"
+        
+        result += "</table>"
+        
+        flash('Missing tables created successfully!', 'success')
+        return result
+        
+    except Exception as e:
+        return f"Error creating tables: {str(e)}"
+
+@app.route('/admin/reimport_missing_data', methods=['GET', 'POST'])
+@login_required
+def reimport_missing_data():
+    """Smart reimport that only imports missing tables"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    import json
+    from datetime import datetime
+    
+    if request.method == 'GET':
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Smart Re-import Missing Data</title>
+            <style>body { font-family: Arial, sans-serif; margin: 40px; }</style>
+        </head>
+        <body>
+            <h2>Smart Re-import Missing Data</h2>
+            <p>This will only import tables that are missing or empty.</p>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="backup_file" accept=".json" required>
+                <br>
+                <input type="submit" value="Smart Re-import">
+            </form>
+            <p><a href="/dashboard">← Back to Dashboard</a></p>
+        </body>
+        </html>
+        '''
+    
+    file = request.files['backup_file']
+    if file.filename == '' or not file.filename.endswith('.json'):
+        flash('Please upload a JSON file', 'danger')
+        return redirect(request.url)
+    
+    try:
+        data = json.load(file)
+        
+        # Check what tables need importing
+        tables_status = {
+            'time_tracking': TimeTracking.query.count() == 0,
+            'leave_requests': LeaveRequest.query.count() == 0,
+            'leave_balances': LeaveBalance.query.count() == 0,
+            'leave_balance_history': LeaveBalanceHistory.query.count() == 0,
+            'payroll': Payroll.query.count() == 0,
+            'payroll_components': PayrollComponent.query.count() == 0,
+            'employee_payroll_adjustments': EmployeePayrollAdjustment.query.count() == 0,
+            'payroll_audit_trail': PayrollAuditTrail.query.count() == 0
+        }
+        
+        imported_counts = {table: 0 for table in tables_status.keys()}
+        
+        # Get existing employee mapping by email
+        existing_employees = Employee.query.all()
+        email_to_id = {emp.email: emp.id for emp in existing_employees}
+        
+        # Create mapping from old employee IDs to new employee IDs using email
+        old_to_new_id = {}
+        for emp_data in data.get('employees', []):
+            if emp_data['email'] in email_to_id:
+                old_to_new_id[emp_data['id']] = email_to_id[emp_data['email']]
+        
+        print(f"Employee ID mapping created: {len(old_to_new_id)} mappings")
+
+        # Import Time Tracking if missing
+        if tables_status['time_tracking']:
+            print("Importing time_tracking...")
+            for entry_data in data.get('time_tracking', []):
+                new_employee_id = old_to_new_id.get(entry_data['employee_id'])
+                if new_employee_id:
+                    entry = TimeTracking(
+                        id=entry_data['id'],
+                        employee_id=new_employee_id,
+                        action_type=entry_data['action_type'],
+                        timestamp=datetime.fromisoformat(entry_data['timestamp']) if entry_data['timestamp'] else None,
+                        latitude=entry_data['latitude'],
+                        longitude=entry_data['longitude'],
+                        address=entry_data['address'],
+                        status=entry_data['status'],
+                        ip_address=entry_data['ip_address']
+                    )
+                    db.session.add(entry)
+                    imported_counts['time_tracking'] += 1
+
+        # Import Leave Requests if missing
+        if tables_status['leave_requests']:
+            print("Importing leave_requests...")
+            for leave_data in data.get('leave_requests', []):
+                new_employee_id = old_to_new_id.get(leave_data['employee_id'])
+                new_approved_by = old_to_new_id.get(leave_data['approved_by_id']) if leave_data['approved_by_id'] else None
+                if new_employee_id:
+                    leave = LeaveRequest(
+                        id=leave_data['id'],
+                        employee_id=new_employee_id,
+                        start_date=datetime.fromisoformat(leave_data['start_date']).date() if leave_data['start_date'] else None,
+                        end_date=datetime.fromisoformat(leave_data['end_date']).date() if leave_data['end_date'] else None,
+                        leave_type=leave_data['leave_type'],
+                        reason=leave_data['reason'],
+                        attachment_filename=leave_data['attachment_filename'],
+                        status=leave_data['status'],
+                        days_requested=leave_data['days_requested'],
+                        created_at=datetime.fromisoformat(leave_data['created_at']) if leave_data['created_at'] else None,
+                        approved_at=datetime.fromisoformat(leave_data['approved_at']) if leave_data['approved_at'] else None,
+                        approved_by_id=new_approved_by
+                    )
+                    db.session.add(leave)
+                    imported_counts['leave_requests'] += 1
+
+        # Import Leave Balances if missing
+        if tables_status['leave_balances']:
+            print("Importing leave_balances...")
+            for balance_data in data.get('leave_balances', []):
+                new_employee_id = old_to_new_id.get(balance_data['employee_id'])
+                if new_employee_id:
+                    balance = LeaveBalance(
+                        id=balance_data['id'],
+                        employee_id=new_employee_id,
+                        leave_type=balance_data['leave_type'],
+                        total_days=balance_data['total_days'],
+                        used_days=balance_data['used_days'],
+                        remaining_days=balance_data['remaining_days'],
+                        updated_at=datetime.fromisoformat(balance_data['updated_at']) if balance_data['updated_at'] else None
+                    )
+                    db.session.add(balance)
+                    imported_counts['leave_balances'] += 1
+
+        # Import Leave Balance History if missing
+        if tables_status['leave_balance_history']:
+            print("Importing leave_balance_history...")
+            for history_data in data.get('leave_balance_history', []):
+                new_employee_id = old_to_new_id.get(history_data['employee_id'])
+                new_admin_id = old_to_new_id.get(history_data['admin_id'])
+                if new_employee_id and new_admin_id:
+                    history = LeaveBalanceHistory(
+                        id=history_data['id'],
+                        employee_id=new_employee_id,
+                        admin_id=new_admin_id,
+                        leave_type=history_data['leave_type'],
+                        old_total=history_data['old_total'],
+                        new_total=history_data['new_total'],
+                        old_used=history_data['old_used'],
+                        new_used=history_data['new_used'],
+                        old_remaining=history_data['old_remaining'],
+                        new_remaining=history_data['new_remaining'],
+                        comment=history_data['comment'],
+                        created_at=datetime.fromisoformat(history_data['created_at']) if history_data['created_at'] else None
+                    )
+                    db.session.add(history)
+                    imported_counts['leave_balance_history'] += 1
+
+        # Import Payroll if missing
+        if tables_status['payroll']:
+            print("Importing payroll...")
+            for payroll_data in data.get('payroll', []):
+                new_employee_id = old_to_new_id.get(payroll_data['employee_id'])
+                if new_employee_id:
+                    payroll = Payroll(
+                        id=payroll_data['id'],
+                        employee_id=new_employee_id,
+                        pay_period=payroll_data['pay_period'],
+                        basic_salary=payroll_data['basic_salary'],
+                        overtime_hours=payroll_data['overtime_hours'],
+                        overtime_pay=payroll_data['overtime_pay'],
+                        bonuses=payroll_data['bonuses'],
+                        unpaid_leave_deduction=payroll_data['unpaid_leave_deduction'],
+                        epf_employee=payroll_data['epf_employee'],
+                        epf_employer=payroll_data['epf_employer'],
+                        socso_employee=payroll_data['socso_employee'],
+                        socso_employer=payroll_data['socso_employer'],
+                        eis_employee=payroll_data['eis_employee'],
+                        eis_employer=payroll_data['eis_employer'],
+                        tax_deduction=payroll_data['tax_deduction'],
+                        other_deductions=payroll_data['other_deductions'],
+                        total_deductions=payroll_data['total_deductions'],
+                        net_salary=payroll_data['net_salary'],
+                        status=payroll_data['status'],
+                        created_at=datetime.fromisoformat(payroll_data['created_at']) if payroll_data['created_at'] else None,
+                        processed_at=datetime.fromisoformat(payroll_data['processed_at']) if payroll_data['processed_at'] else None
+                    )
+                    db.session.add(payroll)
+                    imported_counts['payroll'] += 1
+
+        # Import Payroll Components if missing
+        if tables_status['payroll_components']:
+            print("Importing payroll_components...")
+            for component_data in data.get('payroll_components', []):
+                component = PayrollComponent(
+                    id=component_data['id'],
+                    name=component_data['name'],
+                    component_type=component_data['component_type'],
+                    is_active=component_data['is_active'],
+                    calculation_method=component_data['calculation_method'],
+                    default_value=component_data['default_value'],
+                    description=component_data['description'],
+                    created_at=datetime.fromisoformat(component_data['created_at']) if component_data['created_at'] else None
+                )
+                db.session.add(component)
+                imported_counts['payroll_components'] += 1
+
+        # Import Employee Payroll Adjustments if missing
+        if tables_status['employee_payroll_adjustments']:
+            print("Importing employee_payroll_adjustments...")
+            for adjustment_data in data.get('employee_payroll_adjustments', []):
+                new_employee_id = old_to_new_id.get(adjustment_data['employee_id'])
+                new_created_by = old_to_new_id.get(adjustment_data['created_by'])
+                if new_employee_id and new_created_by:
+                    adjustment = EmployeePayrollAdjustment(
+                        id=adjustment_data['id'],
+                        employee_id=new_employee_id,
+                        pay_period=adjustment_data['pay_period'],
+                        adjustment_type=adjustment_data['adjustment_type'],
+                        amount=adjustment_data['amount'],
+                        description=adjustment_data['description'],
+                        created_by=new_created_by,
+                        created_at=datetime.fromisoformat(adjustment_data['created_at']) if adjustment_data['created_at'] else None,
+                        updated_at=datetime.fromisoformat(adjustment_data['updated_at']) if adjustment_data['updated_at'] else None
+                    )
+                    db.session.add(adjustment)
+                    imported_counts['employee_payroll_adjustments'] += 1
+
+        # Import Payroll Audit Trail if missing
+        if tables_status['payroll_audit_trail']:
+            print("Importing payroll_audit_trail...")
+            for audit_data in data.get('payroll_audit_trail', []):
+                new_employee_id = old_to_new_id.get(audit_data['employee_id'])
+                new_performed_by = old_to_new_id.get(audit_data['performed_by'])
+                if new_employee_id and new_performed_by:
+                    audit = PayrollAuditTrail(
+                        id=audit_data['id'],
+                        employee_id=new_employee_id,
+                        pay_period=audit_data['pay_period'],
+                        action=audit_data['action'],
+                        field_name=audit_data['field_name'],
+                        old_value=audit_data['old_value'],
+                        new_value=audit_data['new_value'],
+                        comment=audit_data['comment'],
+                        performed_by=new_performed_by,
+                        performed_at=datetime.fromisoformat(audit_data['performed_at']) if audit_data['performed_at'] else None
+                    )
+                    db.session.add(audit)
+                    imported_counts['payroll_audit_trail'] += 1
+
+        db.session.commit()
+        
+        # Create summary
+        summary = "<h3>Smart Import Results</h3>"
+        summary += "<p><strong>Tables that were imported (were empty):</strong></p>"
+        
+        any_imported = False
+        for table, count in imported_counts.items():
+            if tables_status[table] and count > 0:
+                summary += f"• {table}: {count} records<br>"
+                any_imported = True
+        
+        if not any_imported:
+            summary += "<p>No tables needed importing - all tables already have data.</p>"
+        
+        summary += "<p><strong>Tables that were skipped (already had data):</strong></p>"
+        any_skipped = False
+        for table, needs_import in tables_status.items():
+            if not needs_import:
+                current_count = globals()[table.capitalize()].query.count() if table != 'time_tracking' else TimeTracking.query.count()
+                summary += f"• {table}: {current_count} records (skipped)<br>"
+                any_skipped = True
+        
+        if not any_skipped:
+            summary += "<p>No tables were skipped.</p>"
+        
+        flash(summary, 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error during smart import: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
 @app.route('/admin/test_login')
 def test_login():
     """Test why login isn't working"""
