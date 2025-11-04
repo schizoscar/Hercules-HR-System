@@ -4849,25 +4849,25 @@ def reset_password(employee_id):
         flash('You do not have permission to reset passwords.', 'danger')
         return redirect(url_for('dashboard'))
 
-    employee = Employee.query.get_or_404(employee_id)
-
-    # Generate temporary password
-    temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
-
-    # Assign hash directly
-    employee.password = generate_password_hash(temp_password)
-
     try:
+        # Generate temporary password
+        temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+        hashed_password = generate_password_hash(temp_password)
+        
+        # Use SQLAlchemy core for direct update
+        result = db.session.execute(
+            db.update(Employee).where(Employee.id == employee_id).values(password=hashed_password)
+        )
         db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        flash(f"Failed to reset password: {str(e)}", 'danger')
-        return redirect(url_for('manage_employees'))
-
-    # Send email using SendGrid after commit
-    server_url = "https://hercules-hr-system.onrender.com/"
-    subject = "Your Hercules HR Password Has Been Reset"
-    body = f"""
+        
+        if result.rowcount > 0:
+            # Get employee details for email
+            employee = Employee.query.get(employee_id)
+            
+            # Send email
+            server_url = "https://hercules-hr-system.onrender.com/"
+            subject = "Your Hercules HR Password Has Been Reset"
+            body = f"""
 Dear {employee.full_name},
 
 Your Hercules HR password has been reset by the administrator.  
@@ -4880,11 +4880,33 @@ and change your password immediately.
 Best regards,  
 Hercules HR Department
 """
-
-    send_email_sendgrid(employee.email, subject, body)
-    flash('Password reset successfully. Email notification sent.', 'success')
+            send_email_sendgrid(employee.email, subject, body)
+            flash('Password reset successfully. Email notification sent.', 'success')
+        else:
+            flash('Employee not found or no changes made.', 'danger')
+            
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to reset password: {str(e)}", 'danger')
+        print(f"Direct password reset error: {str(e)}")
 
     return redirect(url_for('manage_employees'))
+
+def verify_password_storage(employee_id, plain_password):
+    """Verify that password was stored correctly in PostgreSQL"""
+    try:
+        employee = Employee.query.get(employee_id)
+        if employee and employee.password:
+            is_valid = check_password_hash(employee.password, plain_password)
+            return {
+                'success': True,
+                'is_valid': is_valid,
+                'hash_length': len(employee.password),
+                'hash_preview': employee.password[:50] + '...' if len(employee.password) > 50 else employee.password
+            }
+        return {'success': False, 'error': 'Employee or password not found'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
 
 @app.route('/manage_leave_balances')
 @login_required
