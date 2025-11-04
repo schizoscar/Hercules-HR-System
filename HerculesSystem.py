@@ -133,32 +133,48 @@ def send_email(to_email, subject, body):
         print(f"Error sending email to {to_email}: {str(e)}")
         return False
 
-def send_email_async(to, subject, body):
-    """Send email in background thread to avoid timeouts"""
-    @copy_current_request_context
-    def send():
-        try:
-            # Use your existing email function or direct SMTP
-            msg = Message(
-                subject=subject,
-                recipients=[to],
-                body=body,
-                sender=app.config['MAIL_DEFAULT_SENDER']
-            )
-            
-            # If you're using Flask-Mail
-            mail.send(msg)
-            print(f"✓ Email sent to {to}")
-            return True
-        except Exception as e:
-            print(f"✗ Failed to send email to {to}: {e}")
-            return False
+@app.route('/admin/fix_sequences')
+@login_required
+def fix_sequences():
+    """Fix PostgreSQL sequences after data import"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
     
-    # Start in background thread
-    thread = threading.Thread(target=send)
-    thread.daemon = True
-    thread.start()
-    return True  # Return immediately
+    try:
+        from sqlalchemy import text
+        
+        # Fix time_tracking sequence
+        result = db.session.execute(text("SELECT MAX(id) FROM time_tracking")).fetchone()
+        max_id = result[0] or 0
+        
+        if max_id > 0:
+            db.session.execute(text(f"SELECT setval('time_tracking_id_seq', {max_id})"))
+            print(f"✅ Set time_tracking sequence to {max_id}")
+        
+        # Fix other table sequences that might have issues
+        tables = ['leave_requests', 'leave_balances', 'leave_balance_history', 'payroll', 
+                 'payroll_settings', 'payroll_components', 'employee_payroll_adjustments', 
+                 'payroll_audit_trail']
+        
+        for table in tables:
+            try:
+                result = db.session.execute(text(f"SELECT MAX(id) FROM {table}")).fetchone()
+                max_id = result[0] or 0
+                if max_id > 0:
+                    db.session.execute(text(f"SELECT setval('{table}_id_seq', {max_id})"))
+                    print(f"✅ Set {table} sequence to {max_id}")
+            except Exception as e:
+                print(f"⚠️ Could not fix {table} sequence: {e}")
+        
+        db.session.commit()
+        flash('Database sequences fixed successfully! Clock in/out should work now.', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error fixing sequences: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
 
 @app.route('/admin/init_database')
 def init_database():
