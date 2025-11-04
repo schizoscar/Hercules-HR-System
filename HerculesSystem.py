@@ -205,42 +205,6 @@ def init_database():
         </html>
         '''.format(str(e))
 
-@app.route('/admin/update_schema')
-@login_required
-def update_schema():
-    """Safely update password column length without dropping tables"""
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to perform this action.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    try:
-        # Use raw SQL to alter the column
-        from sqlalchemy import text
-        
-        # Check current column length
-        result = db.session.execute(text("""
-            SELECT character_maximum_length 
-            FROM information_schema.columns 
-            WHERE table_name='employee' AND column_name='password'
-        """)).fetchone()
-        
-        current_length = result[0] if result else None
-        
-        if current_length == 120:
-            # Alter the column to 255
-            db.session.execute(text("ALTER TABLE employee ALTER COLUMN password TYPE VARCHAR(255)"))
-            db.session.commit()
-            flash('✅ Password column updated from 120 to 255 characters!', 'success')
-        else:
-            flash(f'ℹ️ Password column is already {current_length} characters', 'info')
-            
-        return redirect(url_for('dashboard'))
-        
-    except Exception as e:
-        db.session.rollback()
-        flash(f'Error updating schema: {str(e)}', 'danger')
-        return redirect(url_for('dashboard'))
-
 @app.route('/admin/check_schema')
 @login_required
 def check_schema():
@@ -680,7 +644,7 @@ def send_email_sendgrid(to_email, subject, body):
         return False
 
 def send_leave_status_email(employee, leave_request, status):
-    """Send email about leave status"""
+    """Send email about leave status using SendGrid"""
     subject = f"Your Leave Request Has Been {status.title()}"
     body = f"""
 Dear {employee.full_name},
@@ -699,10 +663,10 @@ Status: {status.title()}
 Thank you,
 HR Department
 """
-    return send_email(employee.email, subject, body)
+    return send_email_sendgrid(employee.email, subject, body)
 
 def send_supervisor_notification(leave_request):
-    """Send email notification to supervisors about leave requests from their team"""
+    """Send email notification to supervisors about leave requests from their team using SendGrid"""
     supervisors = Employee.query.filter(Employee.user_type == 'supervisor').all()
     
     if not supervisors:
@@ -727,7 +691,7 @@ HR System
     
     success = True
     for supervisor in supervisors:
-        if not send_email(supervisor.email, subject, body):
+        if not send_email_sendgrid(supervisor.email, subject, body):
             success = False
     
     return success
@@ -1259,7 +1223,7 @@ def validate_leave_days(leave_type, days_requested):
     return True, ""
 
 def send_leave_request_notification(leave_request):
-    """Send email notification to admins about new leave request"""
+    """Send email notification to admins about new leave request using SendGrid"""
     admins = Employee.query.filter(Employee.user_type == 'admin').all()
     
     if not admins:
@@ -1267,23 +1231,24 @@ def send_leave_request_notification(leave_request):
     
     subject = f"New Leave Request from {leave_request.employee.full_name}"
     body = f"""
-A new leave request has been submitted.
+A new leave request has been submitted and requires your attention.
 
 Employee: {leave_request.employee.full_name}
 Leave Type: {leave_request.leave_type.title()}
-Dates: {leave_request.start_date.strftime('%d-%m-%y')} to {leave_request.end_date.strftime('%d-%m-%y')}
-Days: {leave_request.days_requested}
+Start Date: {leave_request.start_date.strftime('%d-%m-%y')}
+End Date: {leave_request.end_date.strftime('%d-%m-%y')}
+Days Requested: {leave_request.days_requested}
 Reason: {leave_request.reason}
 
-Please review the request in the HR system.
+Please log in to the HR system to review this request.
 
 Thank you,
-Hercules HR
+HR System
 """
     
     success = True
     for admin in admins:
-        if not send_email(admin.email, subject, body):
+        if not send_email_sendgrid(admin.email, subject, body):
             success = False
     
     return success
@@ -2853,7 +2818,7 @@ def reset_admin_password():
         flash(f"Admin password reset successfully. New password: {temp_password}", "success")
         
         # Optional: send email to admin
-        # send_email(admin_user.email, "Admin Password Reset", f"Your new password is: {temp_password}")
+        # send_email_sendgrid(admin_user.email, "Admin Password Reset", f"Your new password is: {temp_password}")
         
     except Exception as e:
         db.session.rollback()
@@ -3771,7 +3736,7 @@ def approve_leave(request_id):
     
     db.session.commit()
     
-    # Update email to include deduction information
+    # Update email to include deduction information - using SendGrid
     subject = f"Your Leave Request Has Been Approved"
     body = f"""
 Dear {leave_request.employee.full_name},
@@ -3791,7 +3756,7 @@ Status: Approved
 Thank you,
 HR Department
 """
-    if send_email(leave_request.employee.email, subject, body):
+    if send_email_sendgrid(leave_request.employee.email, subject, body):
         flash('Leave request approved successfully. Email notification sent to employee.', 'success')
     else:
         flash('Leave request approved successfully, but failed to send email notification.', 'warning')
@@ -3838,7 +3803,7 @@ If you have any questions, please contact HR.
 Thank you,
 HR Department
 """
-    if send_email(leave_request.employee.email, subject, body):
+    if send_email_sendgrid(leave_request.employee.email, subject, body):
         flash('Leave request rejected successfully. Email notification sent to employee.', 'success')
     else:
         flash('Leave request rejected successfully, but failed to send email notification.', 'warning')
@@ -3978,7 +3943,7 @@ If you have any questions or need assistance, feel free to reach out to the HR t
 Welcome aboard,  
 Hercules HR Dev
 """
-        if send_email(form.email.data, subject, body):
+        if send_email_sendgrid(form.email.data, subject, body):
             flash('Employee added successfully. Login details sent via email.', 'success')
         else:
             flash(f'Employee added successfully. Login details: Username: {username}, Password: {temp_password}. Failed to send email.', 'warning')
@@ -4070,7 +4035,7 @@ If you have any questions or need assistance, feel free to reach out to the HR t
 Welcome aboard,  
 Hercules HR Dev
 """
-                send_email(email, subject, body)
+                send_email_sendgrid(email, subject, body)
                 
             except Exception as e:
                 print(f"Error adding employee: {e}")
@@ -4620,7 +4585,7 @@ Please contact HR department for more information.
 Thank you,
 HR Department
 """
-    if send_email(leave_request.employee.email, subject, body):
+    if send_email_sendgrid(leave_request.employee.email, subject, body):
         flash('Approved leave request rejected. Email notification sent to employee.', 'info')
     else:
         flash('Approved leave request rejected, but failed to send email notification.', 'warning')
@@ -4728,7 +4693,7 @@ def reset_password(employee_id):
         flash(f"Failed to reset password: {str(e)}", 'danger')
         return redirect(url_for('manage_employees'))
 
-    # Send email after commit
+    # Send email using SendGrid after commit
     server_url = "https://hercules-hr-system.onrender.com/"
     subject = "Your Hercules HR Password Has Been Reset"
     body = f"""
@@ -4745,11 +4710,10 @@ Best regards,
 Hercules HR Department
 """
 
-    send_email(employee.email, subject, body)
+    send_email_sendgrid(employee.email, subject, body)
     flash('Password reset successfully. Email notification sent.', 'success')
 
     return redirect(url_for('manage_employees'))
-
 
 @app.route('/manage_leave_balances')
 @login_required
@@ -4914,7 +4878,7 @@ def test_email():
     test_subject = "HR System Email Test"
     test_body = "This is a test email from your HR system."
     
-    if send_email(current_user.email, test_subject, test_body):
+    if send_email_sendgrid(current_user.email, test_subject, test_body):
         flash('Test email sent successfully!', 'success')
     else:
         flash('Failed to send test email. Please check your email configuration.', 'danger')
