@@ -4842,6 +4842,39 @@ def delete_leave(request_id):
     flash('Leave request deleted successfully!', 'success')
     return redirect(url_for('leaves'))
 
+@app.route('/debug_login/<username>/<password>')
+def debug_login(username, password):
+    """Debug route to test login with specific credentials"""
+    user = Employee.query.filter_by(username=username).first()
+    
+    if not user:
+        return f"User '{username}' not found"
+    
+    password_match = check_password_hash(user.password, password)
+    
+    return f"""
+    Username: {user.username}<br>
+    Password in DB: {user.password}<br>
+    Password length: {len(user.password)}<br>
+    Input password: '{password}'<br>
+    Password matches: {password_match}<br>
+    Hash method: {user.password.split('$')[0] if '$' in user.password else 'Unknown'}
+    """
+
+@app.route('/check_recent_resets')
+def check_recent_resets():
+    """Check which users have had passwords reset recently"""
+    employees = Employee.query.all()
+    result = []
+    for emp in employees:
+        result.append({
+            'username': emp.username,
+            'password_hash': emp.password,
+            'hash_length': len(emp.password),
+            'hash_prefix': emp.password[:20] + '...' if len(emp.password) > 20 else emp.password
+        })
+    return jsonify(result)
+
 @app.route('/reset_password/<int:employee_id>', methods=['POST'])
 @login_required
 def reset_password(employee_id):
@@ -4850,63 +4883,58 @@ def reset_password(employee_id):
         return redirect(url_for('dashboard'))
 
     try:
-        # Generate temporary password
-        temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
-        hashed_password = generate_password_hash(temp_password)
+        employee = Employee.query.get_or_404(employee_id)
+
+        # Generate a SIMPLER temporary password without confusing characters
+        # Remove characters that might cause copy-paste issues: 0, O, 1, l, I, etc.
+        safe_characters = string.ascii_letters.replace('O', '').replace('o', '').replace('I', '').replace('l', '') + '23456789'
+        temp_password = ''.join(random.choices(safe_characters, k=8))
         
-        # Use SQLAlchemy core for direct update
-        result = db.session.execute(
-            db.update(Employee).where(Employee.id == employee_id).values(password=hashed_password)
-        )
+        print(f"DEBUG: Resetting password for {employee.username}")
+        print(f"DEBUG: Temporary password generated: '{temp_password}'")
+        
+        # Hash and update the password
+        hashed_password = generate_password_hash(temp_password)
+        employee.password = hashed_password
         db.session.commit()
         
-        if result.rowcount > 0:
-            # Get employee details for email
-            employee = Employee.query.get(employee_id)
-            
-            # Send email
+        # Verify the password was stored correctly
+        db.session.refresh(employee)
+        verification_result = check_password_hash(employee.password, temp_password)
+        print(f"DEBUG: Password verification after reset: {verification_result}")
+        
+        if verification_result:
+            # Send email with CLEAR formatting
             server_url = "https://hercules-hr-system.onrender.com/"
             subject = "Your Hercules HR Password Has Been Reset"
-            body = f"""
-Dear {employee.full_name},
+            body = f"""Dear {employee.full_name},
 
-Your Hercules HR password has been reset by the administrator.  
-Username: {employee.username}  
-Temporary Password: {temp_password}  
+Your Hercules HR password has been reset by the administrator.
 
-Please log in here: {server_url}  
-and change your password immediately.
+IMPORTANT LOGIN DETAILS:
+Username: {employee.username}
+Temporary Password: {temp_password}
 
-Best regards,  
-Hercules HR Department
-"""
+Login URL: {server_url}
+
+Please log in and change your password immediately.
+
+Best regards,
+Hercules HR Department"""
+            
             send_email_sendgrid(employee.email, subject, body)
             flash('Password reset successfully. Email notification sent.', 'success')
+            print(f"DEBUG: Email sent to {employee.email}")
         else:
-            flash('Employee not found or no changes made.', 'danger')
+            flash('Password reset failed: storage verification error.', 'danger')
+            print("DEBUG: Password verification failed after reset")
             
     except Exception as e:
         db.session.rollback()
         flash(f"Failed to reset password: {str(e)}", 'danger')
-        print(f"Direct password reset error: {str(e)}")
+        print(f"DEBUG: Error in reset_password: {str(e)}")
 
     return redirect(url_for('manage_employees'))
-
-def verify_password_storage(employee_id, plain_password):
-    """Verify that password was stored correctly in PostgreSQL"""
-    try:
-        employee = Employee.query.get(employee_id)
-        if employee and employee.password:
-            is_valid = check_password_hash(employee.password, plain_password)
-            return {
-                'success': True,
-                'is_valid': is_valid,
-                'hash_length': len(employee.password),
-                'hash_preview': employee.password[:50] + '...' if len(employee.password) > 50 else employee.password
-            }
-        return {'success': False, 'error': 'Employee or password not found'}
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
 
 @app.route('/manage_leave_balances')
 @login_required
