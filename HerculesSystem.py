@@ -133,10 +133,62 @@ def send_email(to_email, subject, body):
         print(f"Error sending email to {to_email}: {str(e)}")
         return False
 
-@app.route('/admin/fix_sequences')
+@app.route('/admin/check_tables')
 @login_required
-def fix_sequences():
-    """Fix PostgreSQL sequences after data import"""
+def check_tables():
+    """Check which tables actually exist"""
+    try:
+        from sqlalchemy import text, inspect
+        
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        result = "<h3>Existing Database Tables</h3><ul>"
+        for table in sorted(existing_tables):
+            try:
+                count = db.session.execute(text(f"SELECT COUNT(*) FROM {table}")).fetchone()[0]
+                result += f"<li>{table} - {count} records</li>"
+            except:
+                result += f"<li>{table} - error counting</li>"
+        result += "</ul>"
+        
+        return result
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+@app.route('/admin/create_all_tables')
+@login_required
+def create_all_tables():
+    """Create all missing database tables"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Create all tables that should exist based on your models
+        db.create_all()
+        
+        # Check which tables exist now
+        from sqlalchemy import text, inspect
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        result = "<h3>Database Tables Created</h3><ul>"
+        for table in existing_tables:
+            result += f"<li>{table}</li>"
+        result += "</ul>"
+        
+        flash(f'All database tables created successfully! {result}', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        flash(f'Error creating tables: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/admin/fix_sequences_smart')
+@login_required
+def fix_sequences_smart():
+    """Fix PostgreSQL sequences only for tables that exist"""
     if current_user.user_type != 'admin':
         flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
@@ -144,31 +196,52 @@ def fix_sequences():
     try:
         from sqlalchemy import text
         
-        # Fix time_tracking sequence
-        result = db.session.execute(text("SELECT MAX(id) FROM time_tracking")).fetchone()
-        max_id = result[0] or 0
+        # Get list of all existing tables
+        result = db.session.execute(text("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        """)).fetchall()
         
-        if max_id > 0:
-            db.session.execute(text(f"SELECT setval('time_tracking_id_seq', {max_id})"))
-            print(f"✅ Set time_tracking sequence to {max_id}")
+        existing_tables = [row[0] for row in result]
+        print(f"Existing tables: {existing_tables}")
         
-        # Fix other table sequences that might have issues
-        tables = ['leave_requests', 'leave_balances', 'leave_balance_history', 'payroll', 
-                 'payroll_settings', 'payroll_components', 'employee_payroll_adjustments', 
-                 'payroll_audit_trail']
+        fixed_tables = []
         
-        for table in tables:
-            try:
-                result = db.session.execute(text(f"SELECT MAX(id) FROM {table}")).fetchone()
-                max_id = result[0] or 0
-                if max_id > 0:
-                    db.session.execute(text(f"SELECT setval('{table}_id_seq', {max_id})"))
-                    print(f"✅ Set {table} sequence to {max_id}")
-            except Exception as e:
-                print(f"⚠️ Could not fix {table} sequence: {e}")
+        # Only fix sequences for tables that exist
+        tables_to_check = ['time_tracking', 'leave_requests', 'leave_balances', 
+                          'leave_balance_history', 'payroll', 'payroll_settings', 
+                          'payroll_components', 'employee_payroll_adjustments', 
+                          'payroll_audit_trail']
+        
+        for table in tables_to_check:
+            if table in existing_tables:
+                try:
+                    # Get max ID from the table
+                    result = db.session.execute(text(f"SELECT MAX(id) FROM {table}")).fetchone()
+                    max_id = result[0] or 0
+                    
+                    if max_id > 0:
+                        # Fix the sequence
+                        db.session.execute(text(f"SELECT setval('{table}_id_seq', {max_id})"))
+                        fixed_tables.append(f"{table} (set to {max_id})")
+                        print(f"✅ Set {table} sequence to {max_id}")
+                    else:
+                        fixed_tables.append(f"{table} (no data)")
+                except Exception as e:
+                    fixed_tables.append(f"{table} (error: {str(e)})")
+            else:
+                fixed_tables.append(f"{table} (table doesn't exist)")
         
         db.session.commit()
-        flash('Database sequences fixed successfully! Clock in/out should work now.', 'success')
+        
+        # Create result message
+        result_html = "<h3>Sequence Fix Results</h3><ul>"
+        for table_result in fixed_tables:
+            result_html += f"<li>{table_result}</li>"
+        result_html += "</ul>"
+        
+        flash(f'Sequences fixed for existing tables! {result_html}', 'success')
         return redirect(url_for('dashboard'))
         
     except Exception as e:
