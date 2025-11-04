@@ -319,6 +319,88 @@ def check_schema():
     except Exception as e:
         return f"Error: {str(e)}"
 
+@app.route('/admin/check_model_tables')
+@login_required
+def check_model_tables():
+    """Check what table names the models are using"""
+    models = {
+        'Employee': Employee,
+        'TimeTracking': TimeTracking,
+        'LeaveRequest': LeaveRequest,
+        'LeaveBalance': LeaveBalance,
+        'LeaveBalanceHistory': LeaveBalanceHistory,
+        'Payroll': Payroll,
+        'PayrollSettings': PayrollSettings,
+        'PayrollComponent': PayrollComponent,
+        'EmployeePayrollAdjustment': EmployeePayrollAdjustment,
+        'PayrollAuditTrail': PayrollAuditTrail
+    }
+    
+    result = "<h3>Model Table Names</h3><ul>"
+    for name, model in models.items():
+        result += f"<li>{name}: {model.__tablename__}</li>"
+    result += "</ul>"
+    
+    return result
+
+@app.route('/admin/fix_sequences_correct')
+@login_required
+def fix_sequences_correct():
+    """Fix PostgreSQL sequences with correct table names"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        from sqlalchemy import text
+        
+        # Use the correct table names (singular)
+        tables_to_fix = {
+            'time_tracking': 'time_tracking',
+            'leave_request': 'leave_request',  # Singular
+            'leave_balance': 'leave_balance',  # Singular
+            'leave_balance_history': 'leave_balance_history',
+            'payroll': 'payroll',
+            'payroll_settings': 'payroll_settings',
+            'payroll_components': 'payroll_components',
+            'employee_payroll_adjustments': 'employee_payroll_adjustments',
+            'payroll_audit_trail': 'payroll_audit_trail'
+        }
+        
+        fixed_tables = []
+        
+        for table_name, table in tables_to_fix.items():
+            try:
+                # Get max ID from the table
+                result = db.session.execute(text(f"SELECT MAX(id) FROM {table}")).fetchone()
+                max_id = result[0] or 0
+                
+                if max_id > 0:
+                    # Fix the sequence
+                    db.session.execute(text(f"SELECT setval('{table}_id_seq', {max_id})"))
+                    fixed_tables.append(f"{table} (set to {max_id})")
+                    print(f"✅ Set {table} sequence to {max_id}")
+                else:
+                    fixed_tables.append(f"{table} (no data)")
+            except Exception as e:
+                fixed_tables.append(f"{table} (error: {str(e)})")
+        
+        db.session.commit()
+        
+        # Create result message
+        result_html = "<h3>Sequence Fix Results</h3><ul>"
+        for table_result in fixed_tables:
+            result_html += f"<li>{table_result}</li>"
+        result_html += "</ul>"
+        
+        flash(f'Sequences fixed with correct table names! {result_html}', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error fixing sequences: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
 @app.route('/admin/create_missing_tables')
 @login_required
 def create_missing_tables():
