@@ -777,9 +777,33 @@ def debug_users():
     except Exception as e:
         return f"Error: {str(e)}"
 
-def send_email_sendgrid(to_email, subject, body):
-    """Use SendGrid API with plain text formatting"""
+@app.route('/debug_sendgrid')
+def debug_sendgrid():
+    """Check SendGrid configuration"""
     try:
+        # Check authenticated senders
+        auth_response = requests.get(
+            'https://api.sendgrid.com/v3/verified_senders',
+            headers={'Authorization': f'Bearer {app.config["SENDGRID_API_KEY"]}'}
+        )
+        
+        verified_senders = auth_response.json().get('results', []) if auth_response.status_code == 200 else []
+        
+        return f"""
+        SendGrid Configuration:<br>
+        API Key: {app.config['SENDGRID_API_KEY'][:10]}...<br>
+        Verified Senders: {[s['nickname'] for s in verified_senders]}<br>
+        Verified Emails: {[s['from_email'] for s in verified_senders]}
+        """
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def send_email_sendgrid(to_email, subject, body):
+    """Improved SendGrid function to avoid spam"""
+    try:
+        # Clean subject line - remove emojis and excessive punctuation
+        clean_subject = subject.replace('🎉', '').replace('!', '').strip()
+        
         response = requests.post(
             'https://api.sendgrid.com/v3/mail/send',
             headers={
@@ -788,26 +812,38 @@ def send_email_sendgrid(to_email, subject, body):
             },
             json={
                 'personalizations': [{
-                    'to': [{'email': to_email}]
+                    'to': [{'email': to_email}],
+                    'subject': clean_subject
                 }],
                 'from': {
-                    'email': 'itdepthercules@gmail.com',
-                    'name': 'Hercules HR Department'
+                    # Use a domain that matches sending service
+                    'email': 'hercules-hr@sendgrid.me',  # Or Render domain
+                    'name': 'Hercules HR System'
                 },
-                'subject': subject,
+                'reply_to': {
+                    'email': 'itdepthercules@gmail.com',  # Where replies actually go
+                    'name': 'Hercules HR Support'
+                },
+                'subject': clean_subject,
                 'content': [{
-                    'type': 'text/plain',  # Use plain text to avoid link rewriting
+                    'type': 'text/plain',
                     'value': body
-                }]
+                }],
+                'mail_settings': {
+                    'sandbox_mode': {'enable': False}  # Ensure sandbox is off
+                }
             },
             timeout=10
         )
         
         if response.status_code == 202:
-            print(f"✓ Email sent to {to_email} via SendGrid")
+            print(f"✓ Email sent to {to_email}")
             return True
         else:
             print(f"✗ SendGrid error: {response.status_code} - {response.text}")
+            # Check if it's an authentication issue
+            if 'authenticated' in response.text.lower():
+                print("⚠️  Domain authentication issue detected")
             return False
             
     except Exception as e:
