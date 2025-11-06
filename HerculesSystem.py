@@ -3048,21 +3048,34 @@ def email_gone_online_test():
         print(f"🔧 Testing email for: {test_employee.email}")
         print(f"🔧 Temporary password: {temp_password}")
         
-        subject = "Hercules HR System - Your Login Information"
+        subject = "🎉 Hercules HR System is Live"
         body = f"""Dear {test_employee.full_name},
 
-Your Hercules HR System account is now ready for access.
+Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
 
-System URL: {server_url}
-Username: {test_employee.username}
-Temporary Password: {temp_password}
+🔗 Your New Login Portal:
+{server_url}
 
-Please log in and change your password immediately.
+👤 Your Login Details:
+• Username: {test_employee.username}
+• Temporary Password: {temp_password}
 
-If you have any issues accessing the system, please contact the HR department.
+🚀 What's New:
+• Access the system from any device with internet
+• No more local network restrictions
+• Same great features, now with more flexibility
+
+📱 Access Anywhere:
+You can now access the system from:
+• Office computers
+• Home laptops
+• Mobile phones
+• Tablets
+
+If you experience any issues accessing the system or have questions, please contact the HR department.
 
 Best regards,
-Hercules HR Department
+Hercules IT Department
 """
         # Send using SendGrid with verified domain email
         email_sent = send_email_sendgrid(test_employee.email, subject, body)
