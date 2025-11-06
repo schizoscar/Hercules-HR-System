@@ -3108,16 +3108,21 @@ def email_gone_online():
 
     server_url = "https://hercules-hr-system.onrender.com/"
     
-    # Process in batches to avoid memory issues
-    batch_size = 20
+    # Optimized for 90 employees - smaller batches with delays
+    batch_size = 5  # Small batches to avoid memory issues
     reset_count = 0
     email_success_count = 0
     email_failed_count = 0
+    failed_emails = []
 
-    # Process employees in batches
+    print(f"🔧 Starting bulk email for {len(employees)} employees in batches of {batch_size}")
+
+    # Process employees in small batches with delays
     for i in range(0, len(employees), batch_size):
         batch = employees[i:i + batch_size]
         temp_passwords = {}
+        
+        print(f"🔧 Processing batch {i//batch_size + 1}/{(len(employees)-1)//batch_size + 1}")
         
         # Step 1: Generate temporary passwords for this batch
         for employee in batch:
@@ -3129,13 +3134,14 @@ def email_gone_online():
         # Commit this batch
         try:
             db.session.commit()
+            print(f"✅ Batch {i//batch_size + 1} passwords reset successfully")
         except Exception as e:
             db.session.rollback()
             flash(f"Failed to reset passwords at batch {i//batch_size + 1}: {str(e)}", 'danger')
             return redirect(url_for('dashboard'))
 
-        # Step 2: Send emails for this batch using SendGrid
-        for employee in batch:
+        # Step 2: Send emails for this batch with proper pacing
+        for j, employee in enumerate(batch):
             try:
                 temp_password = temp_passwords[employee.id]
                 subject = "🎉 Hercules HR System is Live!"
@@ -3168,20 +3174,41 @@ If you experience any issues accessing the system or have questions, please cont
 Best regards,
 Hercules IT Department
 """
-                # Use SendGrid API with verified domain email
-                email_sent = send_email_sendgrid(employee.email, subject, body)
-                if email_sent:
-                    email_success_count += 1
-                    print(f"✅ Email sent to {employee.email}")
-                else:
+                # Send email with individual error handling
+                try:
+                    email_sent = send_email_sendgrid(employee.email, subject, body)
+                    if email_sent:
+                        email_success_count += 1
+                        print(f"✅ ({email_success_count}/{len(employees)}) Email sent to {employee.email}")
+                    else:
+                        email_failed_count += 1
+                        failed_emails.append(employee.email)
+                        print(f"❌ Failed to send email to {employee.email}")
+                except Exception as email_error:
                     email_failed_count += 1
-                    print(f"❌ Failed to send email to {employee.email}")
-
+                    failed_emails.append(employee.email)
+                    print(f"❌ Email exception for {employee.email}: {email_error}")
+                
+                # Add delay between emails to avoid rate limiting
+                if j < len(batch) - 1:  # Don't delay after the last email in batch
+                    import time
+                    time.sleep(3)  # 3 second delay between emails
+                    
             except Exception as e:
-                print(f"❌ Error sending email to {employee.email}: {e}")
+                print(f"❌ Error processing employee {employee.email}: {e}")
                 email_failed_count += 1
+                failed_emails.append(employee.email)
                 continue
 
+        # Add delay between batches to avoid overwhelming the system
+        if i + batch_size < len(employees):  # Don't delay after the last batch
+            import time
+            print(f"⏳ Batch {i//batch_size + 1} completed. Taking a 10-second break...")
+            time.sleep(10)  # 10 second delay between batches
+
+    # Final summary
+    print(f"🎉 Bulk email completed: {email_success_count} successful, {email_failed_count} failed")
+    
     # Flash summary
     flash_message = f"""
 Password reset and emailing completed!
@@ -3190,6 +3217,7 @@ Password reset and emailing completed!
 • {email_failed_count} emails failed
 """
     if email_failed_count > 0:
+        flash_message += f"\nFailed emails (first 5): {', '.join(failed_emails[:5])}{'...' if len(failed_emails) > 5 else ''}"
         flash(flash_message, 'warning')
     else:
         flash(flash_message, 'success')
