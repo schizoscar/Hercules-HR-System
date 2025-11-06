@@ -99,6 +99,12 @@ app.config['MAIL_USERNAME'] = 'itdepthercules@gmail.com'
 app.config['MAIL_PASSWORD'] = 'ezjh afdo dsqa efzn'
 app.config['MAIL_DEFAULT_SENDER'] = 'itdepthercules@gmail.com'
 
+# Email Configuration
+SMTP_SERVER = "mail.hercules-engineering.com"
+SMTP_PORT = 587  # Start with this, adjust if needed
+SMTP_USERNAME = "it@hercules-engineering.com"
+SMTP_PASSWORD = "jbjkaavkufvjkrak"
+
 # Configuration for leave file uploads
 app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'attachments')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -886,37 +892,37 @@ def test_smtp_ports():
     return None
 
 def send_email_webmail(to_email, subject, body):
-    """Send email using webmail SMTP with automatic port detection"""
+    """Send email using webmail with app password"""
     try:
         import smtplib
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
         
+        # Your email settings
         smtp_server = "mail.hercules-engineering.com"
-        smtp_username = "itdepthercules@hercules-engineering.com"
-        smtp_password = "your-webmail-password"  # Your regular password
+        smtp_username = "it@hercules-engineering.com"
+        smtp_password = "jbjkaavkufvjkrak"  # App password
         
-        # Common ports in order of likelihood
-        ports_to_try = [587, 465, 25]
+        # Common ports to try (most likely 587)
+        ports_to_try = [587, 465]
         
         for port in ports_to_try:
             try:
-                print(f"Trying port {port}...")
+                print(f"Trying {smtp_server}:{port}...")
                 
                 message = MIMEMultipart()
-                message["From"] = f"Hercules HR <{smtp_username}>"
+                message["From"] = f"Hercules HR System <{smtp_username}>"
                 message["To"] = to_email
                 message["Subject"] = subject
                 message.attach(MIMEText(body, "plain"))
-                
+
                 if port == 465:
                     # SSL connection
                     server = smtplib.SMTP_SSL(smtp_server, port, timeout=10)
                 else:
-                    # STARTTLS connection
+                    # STARTTLS connection (port 587)
                     server = smtplib.SMTP(smtp_server, port, timeout=10)
-                    if port != 25:  # Port 25 often doesn't support STARTTLS
-                        server.starttls()
+                    server.starttls()
                 
                 server.login(smtp_username, smtp_password)
                 server.sendmail(smtp_username, to_email, message.as_string())
@@ -933,7 +939,7 @@ def send_email_webmail(to_email, subject, body):
         return False
         
     except Exception as e:
-        print(f"✗ Webmail SMTP error: {e}")
+        print(f"✗ Email error: {e}")
         return False
 
 @app.route('/test_webmail_smtp')
@@ -2936,7 +2942,7 @@ def import_data_final():
         flash(f'Error importing data: {str(e)}', 'danger')
         return redirect(url_for('dashboard'))
 
-@@app.route('/admin/email_gone_online_test')
+@app.route('/admin/email_gone_online_test')
 @login_required
 def email_gone_online_test():
     if current_user.user_type != 'admin':
@@ -5211,20 +5217,28 @@ def leave_balance_history():
                          employees=employees,
                          admins=admins)
 
-@app.route('/test_email')
+@app.route('/test_email_system')
 @login_required
-def test_email():
+def test_email_system():
+    """Test the email system"""
     if current_user.user_type != 'admin':
-        flash('You do not have permission to test email.', 'danger')
+        flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
     
-    test_subject = "HR System Email Test"
-    test_body = "This is a test email from your HR system."
+    test_subject = "Hercules HR System Test"
+    test_body = "This is a test email from your Hercules HR system."
     
-    if send_email_sendgrid(current_user.email, test_subject, test_body):
+    # Send test email to yourself
+    success = send_email_webmail(
+        "it@hercules-engineering.com", 
+        test_subject, 
+        test_body
+    )
+    
+    if success:
         flash('Test email sent successfully!', 'success')
     else:
-        flash('Failed to send test email. Please check your email configuration.', 'danger')
+        flash('Failed to send test email.', 'danger')
     
     return redirect(url_for('dashboard'))
 
