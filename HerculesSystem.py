@@ -1036,16 +1036,36 @@ def send_email_webmail(to_email, subject, body):
         traceback.print_exc()
         return False
 
-@app.route('/test_webmail_smtp')
-def test_webmail_smtp():
-    """Test webmail SMTP with different ports"""
-    success = send_email_webmail(
-        "itdepthercules@hercules-engineering.com",  # Send to yourself
-        "Webmail SMTP Test", 
-        "This is a test email from your HR system."
+    @app.route('/test_sendgrid_verified')
+@login_required
+def test_sendgrid_verified():
+    """Test SendGrid with your verified domain email"""
+    if current_user.user_type != 'admin':
+        flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    test_subject = "Hercules HR System - Domain Test"
+    test_body = """This is a test email from your Hercules HR system.
+
+If you receive this, SendGrid is working with your domain email:
+it@hercules-engineering.com
+
+This means password reset emails will now work properly!"""
+
+    # Send test to yourself
+    success = send_email_sendgrid(
+        "it@hercules-engineering.com",  # Send to yourself first
+        test_subject, 
+        test_body
     )
     
-    return f"Webmail SMTP Test: {'SUCCESS' if success else 'FAILED'}"
+    if success:
+        flash('✅ Test email sent successfully using your domain!', 'success')
+    else:
+        flash('❌ Failed to send test email with domain.', 'danger')
+    
+    return redirect(url_for('dashboard'))
+
 
 def send_leave_status_email(employee, leave_request, status):
     """Send email about leave status using SendGrid"""
