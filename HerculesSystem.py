@@ -5299,7 +5299,7 @@ def leave_balance_history():
     return render_template('leave_balance_history.html', 
                          history_records=history_records,
                          employees=employees,
-                         admins=admins
+                         admins=admins)
 
 @app.route('/recruitment')
 @login_required
