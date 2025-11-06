@@ -3155,17 +3155,17 @@ If you experience any issues accessing the system or have questions, please cont
 Best regards,
 Hercules IT Department
 """
-                # Use SendGrid instead of SMTP
+                # Use SendGrid API with verified domain email
                 email_sent = send_email_sendgrid(employee.email, subject, body)
                 if email_sent:
                     email_success_count += 1
-                    print(f"✓ Email sent to {employee.email}")
+                    print(f"✅ Email sent to {employee.email}")
                 else:
                     email_failed_count += 1
-                    print(f"✗ Failed to send email to {employee.email}")
+                    print(f"❌ Failed to send email to {employee.email}")
 
             except Exception as e:
-                print(f"Error sending email to {employee.email}: {e}")
+                print(f"❌ Error sending email to {employee.email}: {e}")
                 email_failed_count += 1
                 continue
 
@@ -4114,9 +4114,6 @@ def approve_leave(request_id):
             deduction_note = f"\nNote: This unpaid leave will result in a salary deduction of ${unpaid_deduction:.2f}"
             flash(f'Unpaid leave approved. Salary deduction: ${unpaid_deduction:.2f}', 'info')
     
-    # Rest of your existing approve_leave code remains the same...
-    # [Your existing code for deducting leave balances]
-    
     db.session.commit()
     
     # Update email to include deduction information - using SendGrid
@@ -4304,7 +4301,7 @@ def add_employee():
         
         db.session.commit()
         
-        # Send email (your existing email code)
+        # Send email using SendGrid
         server_url = "https://hercules-hr-system.onrender.com/"
         subject = "Your Hercules HR Account Has Been Created"
         body = f"""
@@ -4326,7 +4323,8 @@ If you have any questions or need assistance, feel free to reach out to the HR t
 Welcome aboard,  
 Hercules HR Dev
 """
-        if send_email_sendgrid(form.email.data, subject, body):
+        email_sent = send_email_sendgrid(form.email.data, subject, body)
+        if email_sent:
             flash('Employee added successfully. Login details sent via email.', 'success')
         else:
             flash(f'Employee added successfully. Login details: Username: {username}, Password: {temp_password}. Failed to send email.', 'warning')
@@ -4396,7 +4394,7 @@ def bulk_add_employees():
                 employees_added.append(employee)
                 success_count += 1
                 
-                # Send email 
+                # Send email using SendGrid
                 server_url = "https://hercules-hr-system.onrender.com/"
                 subject = "Your Hercules HR Account Has Been Created"
                 body = f"""
@@ -4460,7 +4458,7 @@ Hercules HR Dev
         flash(f'Added {success_count} employees successfully. {error_count} failed.', 'success')
         return redirect(url_for('manage_employees'))
     
-    return render_template('bulk_add_employees.html', form=form)
+    return render_template('bulk_add_employees.html', form=form)    
 
 @app.route('/delete_employee/<int:employee_id>', methods=['POST'])
 @login_required
@@ -4968,7 +4966,8 @@ Please contact HR department for more information.
 Thank you,
 HR Department
 """
-    if send_email_sendgrid(leave_request.employee.email, subject, body):
+    email_sent = send_email_sendgrid(leave_request.employee.email, subject, body)
+    if email_sent:
         flash('Approved leave request rejected. Email notification sent to employee.', 'info')
     else:
         flash('Approved leave request rejected, but failed to send email notification.', 'warning')
@@ -5102,8 +5101,8 @@ def reset_password(employee_id):
         safe_characters = string.ascii_letters.replace('O', '').replace('o', '').replace('I', '').replace('l', '') + '23456789'
         temp_password = ''.join(random.choices(safe_characters, k=8))
         
-        print(f"DEBUG: Resetting password for {employee.username}")
-        print(f"DEBUG: Temporary password generated: '{temp_password}'")
+        print(f"🔧 Resetting password for {employee.username}")
+        print(f"🔧 Temporary password generated: '{temp_password}'")
         
         # Hash and update the password
         hashed_password = generate_password_hash(temp_password)
@@ -5113,10 +5112,10 @@ def reset_password(employee_id):
         # Verify the password was stored correctly
         db.session.refresh(employee)
         verification_result = check_password_hash(employee.password, temp_password)
-        print(f"DEBUG: Password verification after reset: {verification_result}")
+        print(f"🔧 Password verification after reset: {verification_result}")
         
         if verification_result:
-            # Send email with CLEAR formatting
+            # Send email with CLEAR formatting using SendGrid API
             server_url = "https://hercules-hr-system.onrender.com/"
             subject = "Your Hercules HR Password Has Been Reset"
             body = f"""Dear {employee.full_name},
@@ -5134,17 +5133,23 @@ Please log in and change your password immediately.
 Best regards,
 Hercules HR Department"""
             
-            send_email_sendgrid(employee.email, subject, body)
-            flash('Password reset successfully. Email notification sent.', 'success')
-            print(f"DEBUG: Email sent to {employee.email}")
+            # Use SendGrid API with verified domain email
+            email_sent = send_email_sendgrid(employee.email, subject, body)
+            
+            if email_sent:
+                flash('Password reset successfully. Email notification sent.', 'success')
+                print(f"✅ Email sent to {employee.email}")
+            else:
+                flash('Password reset but email failed to send.', 'warning')
+                print(f"❌ Email failed for {employee.email}")
         else:
             flash('Password reset failed: storage verification error.', 'danger')
-            print("DEBUG: Password verification failed after reset")
+            print("❌ Password verification failed after reset")
             
     except Exception as e:
         db.session.rollback()
         flash(f"Failed to reset password: {str(e)}", 'danger')
-        print(f"DEBUG: Error in reset_password: {str(e)}")
+        print(f"❌ Error in reset_password: {str(e)}")
 
     return redirect(url_for('manage_employees'))
 
