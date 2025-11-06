@@ -891,8 +891,73 @@ def test_smtp_ports():
     
     return None
 
+@app.route('/debug_email')
+@login_required
+def debug_email():
+    """Detailed email debugging"""
+    if current_user.user_type != 'admin':
+        return "Access denied"
+    
+    output = []
+    
+    # Test basic connection without sending
+    try:
+        import smtplib
+        
+        smtp_server = "mail.hercules-engineering.com"
+        smtp_username = "it@hercules-engineering.com"
+        
+        output.append(f"Testing connection to: {smtp_server}")
+        output.append(f"Username: {smtp_username}")
+        
+        # Test each port
+        for port in [587, 465, 25]:
+            try:
+                output.append(f"--- Testing port {port} ---")
+                
+                if port == 465:
+                    server = smtplib.SMTP_SSL(smtp_server, port, timeout=5)
+                else:
+                    server = smtplib.SMTP(smtp_server, port, timeout=5)
+                    if port != 25:
+                        server.starttls()
+                
+                output.append(f"✅ Port {port}: Connection successful")
+                server.quit()
+                
+            except Exception as e:
+                output.append(f"❌ Port {port}: {str(e)}")
+                
+    except Exception as e:
+        output.append(f"❌ Overall test failed: {str(e)}")
+    
+    return "<br>".join(output)
+
+@app.route('/test_auth')
+def test_auth():
+    """Test just the authentication"""
+    try:
+        import smtplib
+        
+        smtp_server = "mail.hercules-engineering.com"
+        smtp_username = "it@hercules-engineering.com"
+        smtp_password = "jbjkaavkufvjkrak"
+        
+        server = smtplib.SMTP(smtp_server, 587, timeout=10)
+        server.starttls()
+        
+        try:
+            server.login(smtp_username, smtp_password)
+            server.quit()
+            return "✅ Authentication SUCCESSFUL"
+        except smtplib.SMTPAuthenticationError:
+            return "❌ Authentication FAILED - wrong credentials"
+            
+    except Exception as e:
+        return f"❌ Connection failed: {str(e)}"
+
 def send_email_webmail(to_email, subject, body):
-    """Send email using webmail with app password"""
+    """Send email using webmail with app password - with detailed debugging"""
     try:
         import smtplib
         from email.mime.text import MIMEText
@@ -903,12 +968,17 @@ def send_email_webmail(to_email, subject, body):
         smtp_username = "it@hercules-engineering.com"
         smtp_password = "jbjkaavkufvjkrak"  # App password
         
-        # Common ports to try (most likely 587)
-        ports_to_try = [587, 465]
+        print(f"🔧 Starting email send to: {to_email}")
+        print(f"🔧 SMTP Server: {smtp_server}")
+        print(f"🔧 Username: {smtp_username}")
+        print(f"🔧 Password length: {len(smtp_password)}")
+        
+        # Common ports to try
+        ports_to_try = [587, 465, 25]
         
         for port in ports_to_try:
             try:
-                print(f"Trying {smtp_server}:{port}...")
+                print(f"🔧 Trying port {port}...")
                 
                 message = MIMEMultipart()
                 message["From"] = f"Hercules HR System <{smtp_username}>"
@@ -916,30 +986,54 @@ def send_email_webmail(to_email, subject, body):
                 message["Subject"] = subject
                 message.attach(MIMEText(body, "plain"))
 
+                print(f"🔧 Attempting connection to {smtp_server}:{port}")
+                
                 if port == 465:
                     # SSL connection
+                    print("🔧 Using SSL connection...")
                     server = smtplib.SMTP_SSL(smtp_server, port, timeout=10)
+                    print("🔧 SSL connection established")
                 else:
-                    # STARTTLS connection (port 587)
+                    # STARTTLS connection
+                    print("🔧 Using STARTTLS connection...")
                     server = smtplib.SMTP(smtp_server, port, timeout=10)
-                    server.starttls()
+                    print("🔧 TCP connection established, starting TLS...")
+                    if port != 25:  # Port 25 often doesn't support STARTTLS
+                        server.starttls()
+                        print("🔧 TLS started")
                 
+                print("🔧 Attempting login...")
                 server.login(smtp_username, smtp_password)
-                server.sendmail(smtp_username, to_email, message.as_string())
-                server.quit()
+                print("🔧 Login successful")
                 
-                print(f"✓ Email sent successfully using port {port}")
+                print("🔧 Sending email...")
+                server.sendmail(smtp_username, to_email, message.as_string())
+                print("🔧 Email sent successfully")
+                
+                server.quit()
+                print(f"✅ Email sent successfully using port {port}")
                 return True
                 
+            except smtplib.SMTPAuthenticationError as e:
+                print(f"❌ Authentication failed on port {port}: {e}")
+                continue
+            except smtplib.SMTPConnectError as e:
+                print(f"❌ Connection failed on port {port}: {e}")
+                continue
+            except smtplib.SMTPException as e:
+                print(f"❌ SMTP error on port {port}: {e}")
+                continue
             except Exception as e:
-                print(f"✗ Port {port} failed: {e}")
+                print(f"❌ General error on port {port}: {e}")
                 continue
         
         print("❌ All ports failed")
         return False
         
     except Exception as e:
-        print(f"✗ Email error: {e}")
+        print(f"❌ Overall email error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 @app.route('/test_webmail_smtp')
@@ -5232,7 +5326,7 @@ def test_email_system():
     success = send_email_webmail(
         "it@hercules-engineering.com", 
         test_subject, 
-        test_body
+        test_bodydd
     )
     
     if success:
