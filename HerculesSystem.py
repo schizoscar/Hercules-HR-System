@@ -799,11 +799,8 @@ def debug_sendgrid():
         return f"Error: {str(e)}"
 
 def send_email_sendgrid(to_email, subject, body):
-    """Improved SendGrid function to avoid spam"""
+    """Use SendGrid API with the EXACT verified sender email"""
     try:
-        # Clean subject line - remove emojis and excessive punctuation
-        clean_subject = subject.replace('🎉', '').replace('!', '').strip()
-        
         response = requests.post(
             'https://api.sendgrid.com/v3/mail/send',
             headers={
@@ -812,43 +809,143 @@ def send_email_sendgrid(to_email, subject, body):
             },
             json={
                 'personalizations': [{
-                    'to': [{'email': to_email}],
-                    'subject': clean_subject
+                    'to': [{'email': to_email}]
                 }],
                 'from': {
-                    # Use a domain that matches sending service
-                    'email': 'hercules-hr@sendgrid.me',  # Or Render domain
-                    'name': 'Hercules HR System'
+                    # MUST match exactly your verified sender
+                    'email': 'it@hercules-engineering.com',  # Exact verified email
+                    'name': 'Hercules HR Department'
                 },
+                # Optional: Add reply_to if you want replies to go elsewhere
                 'reply_to': {
-                    'email': 'itdepthercules@gmail.com',  # Where replies actually go
+                    'email': 'it@hercules-engineering.com',  # Same or different
                     'name': 'Hercules HR Support'
                 },
-                'subject': clean_subject,
+                'subject': subject,
                 'content': [{
                     'type': 'text/plain',
                     'value': body
-                }],
-                'mail_settings': {
-                    'sandbox_mode': {'enable': False}  # Ensure sandbox is off
-                }
+                }]
             },
             timeout=10
         )
         
         if response.status_code == 202:
-            print(f"✓ Email sent to {to_email}")
+            print(f"✓ Email sent to {to_email} via SendGrid")
             return True
         else:
             print(f"✗ SendGrid error: {response.status_code} - {response.text}")
-            # Check if it's an authentication issue
-            if 'authenticated' in response.text.lower():
-                print("⚠️  Domain authentication issue detected")
             return False
             
     except Exception as e:
         print(f"✗ SendGrid exception: {e}")
         return False
+
+def test_smtp_ports():
+    """Test common SMTP ports with your server"""
+    smtp_server = "mail.hercules-engineering.com"
+    common_ports = [587, 465, 25, 2525, 5870]
+    
+    smtp_username = "itdepthercules@hercules-engineering.com"
+    smtp_password = "your-webmail-password"  # Your regular password
+    
+    for port in common_ports:
+        try:
+            print(f"Testing port {port}...")
+            
+            import smtplib
+            from email.mime.text import MIMEText
+            
+            # Create test message
+            msg = MIMEText("SMTP port test")
+            msg['Subject'] = f'Port Test: {port}'
+            msg['From'] = smtp_username
+            msg['To'] = smtp_username  # Send to yourself
+            
+            # Try the connection
+            if port in [465]:
+                # SSL connection
+                server = smtplib.SMTP_SSL(smtp_server, port, timeout=10)
+            else:
+                # STARTTLS connection
+                server = smtplib.SMTP(smtp_server, port, timeout=10)
+                if port != 25:  # Port 25 often doesn't support STARTTLS
+                    server.starttls()
+            
+            server.login(smtp_username, smtp_password)
+            server.sendmail(smtp_username, [smtp_username], msg.as_string())
+            server.quit()
+            
+            print(f"✅ SUCCESS: Port {port} works!")
+            return port
+            
+        except Exception as e:
+            print(f"❌ Port {port} failed: {e}")
+            continue
+    
+    return None
+
+def send_email_webmail(to_email, subject, body):
+    """Send email using webmail SMTP with automatic port detection"""
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
+        smtp_server = "mail.hercules-engineering.com"
+        smtp_username = "itdepthercules@hercules-engineering.com"
+        smtp_password = "your-webmail-password"  # Your regular password
+        
+        # Common ports in order of likelihood
+        ports_to_try = [587, 465, 25]
+        
+        for port in ports_to_try:
+            try:
+                print(f"Trying port {port}...")
+                
+                message = MIMEMultipart()
+                message["From"] = f"Hercules HR <{smtp_username}>"
+                message["To"] = to_email
+                message["Subject"] = subject
+                message.attach(MIMEText(body, "plain"))
+                
+                if port == 465:
+                    # SSL connection
+                    server = smtplib.SMTP_SSL(smtp_server, port, timeout=10)
+                else:
+                    # STARTTLS connection
+                    server = smtplib.SMTP(smtp_server, port, timeout=10)
+                    if port != 25:  # Port 25 often doesn't support STARTTLS
+                        server.starttls()
+                
+                server.login(smtp_username, smtp_password)
+                server.sendmail(smtp_username, to_email, message.as_string())
+                server.quit()
+                
+                print(f"✓ Email sent successfully using port {port}")
+                return True
+                
+            except Exception as e:
+                print(f"✗ Port {port} failed: {e}")
+                continue
+        
+        print("❌ All ports failed")
+        return False
+        
+    except Exception as e:
+        print(f"✗ Webmail SMTP error: {e}")
+        return False
+
+@app.route('/test_webmail_smtp')
+def test_webmail_smtp():
+    """Test webmail SMTP with different ports"""
+    success = send_email_webmail(
+        "itdepthercules@hercules-engineering.com",  # Send to yourself
+        "Webmail SMTP Test", 
+        "This is a test email from your HR system."
+    )
+    
+    return f"Webmail SMTP Test: {'SUCCESS' if success else 'FAILED'}"
 
 def send_leave_status_email(employee, leave_request, status):
     """Send email about leave status using SendGrid"""
@@ -2839,7 +2936,7 @@ def import_data_final():
         flash(f'Error importing data: {str(e)}', 'danger')
         return redirect(url_for('dashboard'))
 
-@app.route('/admin/email_gone_online_test')
+@@app.route('/admin/email_gone_online_test')
 @login_required
 def email_gone_online_test():
     if current_user.user_type != 'admin':
@@ -2861,37 +2958,26 @@ def email_gone_online_test():
     try:
         db.session.commit()
         
-        subject = "🎉 Hercules HR System is Live!"
+        # Use a cleaner subject without emojis
+        subject = "Hercules HR System - Your Login Information"
         body = f"""
 Dear {test_employee.full_name},
 
-Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
+Your Hercules HR System account is now ready for access.
 
-🔗 Your New Login Portal:
-{server_url}
+LOGIN DETAILS:
+System URL: {server_url}
+Username: {test_employee.username}
+Temporary Password: {temp_password}
 
-👤 Your Login Details:
-• Username: {test_employee.username}
-• Temporary Password: {temp_password}
+Please log in and change your password immediately.
 
-🚀 What's New:
-• Access the system from any device with internet
-• No more local network restrictions
-• Same great features, now with more flexibility
-
-📱 Access Anywhere:
-You can now access the system from:
-• Office computers
-• Home laptops
-• Mobile phones
-• Tablets
-
-If you experience any issues accessing the system or have questions, please contact the HR department.
+If you have any issues accessing the system, please contact the HR department.
 
 Best regards,
-Hercules IT Department
+Hercules HR Department
 """
-        # Send using SendGrid
+        # Send using SendGrid - now with correct verified sender
         email_sent = send_email_sendgrid(test_employee.email, subject, body)
         
         if email_sent:
