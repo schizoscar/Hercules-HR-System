@@ -1036,7 +1036,7 @@ def send_email_webmail(to_email, subject, body):
         traceback.print_exc()
         return False
 
-    @app.route('/test_sendgrid_verified')
+@app.route('/test_sendgrid_verified')
 @login_required
 def test_sendgrid_verified():
     """Test SendGrid with your verified domain email"""
@@ -1065,7 +1065,6 @@ This means password reset emails will now work properly!"""
         flash('❌ Failed to send test email with domain.', 'danger')
     
     return redirect(url_for('dashboard'))
-
 
 def send_leave_status_email(employee, leave_request, status):
     """Send email about leave status using SendGrid"""
