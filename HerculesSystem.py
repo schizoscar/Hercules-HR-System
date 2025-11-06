@@ -805,7 +805,7 @@ def debug_sendgrid():
         return f"Error: {str(e)}"
 
 def send_email_sendgrid(to_email, subject, body):
-    """Use SendGrid API with the EXACT verified sender email"""
+    """Use SendGrid API with verified domain email"""
     try:
         response = requests.post(
             'https://api.sendgrid.com/v3/mail/send',
@@ -818,13 +818,11 @@ def send_email_sendgrid(to_email, subject, body):
                     'to': [{'email': to_email}]
                 }],
                 'from': {
-                    # MUST match exactly your verified sender
-                    'email': 'it@hercules-engineering.com',  # Exact verified email
-                    'name': 'Hercules HR Department'
+                    'email': 'it@hercules-engineering.com',  # Your verified domain email
+                    'name': 'Hercules HR System'
                 },
-                # Optional: Add reply_to if you want replies to go elsewhere
                 'reply_to': {
-                    'email': 'it@hercules-engineering.com',  # Same or different
+                    'email': 'it@hercules-engineering.com',  # Replies to your domain
                     'name': 'Hercules HR Support'
                 },
                 'subject': subject,
@@ -837,59 +835,29 @@ def send_email_sendgrid(to_email, subject, body):
         )
         
         if response.status_code == 202:
-            print(f"✓ Email sent to {to_email} via SendGrid")
+            print(f"✅ Email sent to {to_email} via SendGrid")
             return True
         else:
-            print(f"✗ SendGrid error: {response.status_code} - {response.text}")
+            print(f"❌ SendGrid error: {response.status_code} - {response.text}")
+            # Log specific error details
+            try:
+                error_data = response.json()
+                if 'errors' in error_data:
+                    for error in error_data['errors']:
+                        print(f"❌ SendGrid detailed error: {error.get('message', 'Unknown error')}")
+            except:
+                pass
             return False
             
-    except Exception as e:
-        print(f"✗ SendGrid exception: {e}")
+    except requests.exceptions.Timeout:
+        print(f"❌ SendGrid timeout - request took too long")
         return False
-
-def test_smtp_ports():
-    """Test common SMTP ports with your server"""
-    smtp_server = "mail.hercules-engineering.com"
-    common_ports = [587, 465, 25, 2525, 5870]
-    
-    smtp_username = "itdepthercules@hercules-engineering.com"
-    smtp_password = "your-webmail-password"  # Your regular password
-    
-    for port in common_ports:
-        try:
-            print(f"Testing port {port}...")
-            
-            import smtplib
-            from email.mime.text import MIMEText
-            
-            # Create test message
-            msg = MIMEText("SMTP port test")
-            msg['Subject'] = f'Port Test: {port}'
-            msg['From'] = smtp_username
-            msg['To'] = smtp_username  # Send to yourself
-            
-            # Try the connection
-            if port in [465]:
-                # SSL connection
-                server = smtplib.SMTP_SSL(smtp_server, port, timeout=10)
-            else:
-                # STARTTLS connection
-                server = smtplib.SMTP(smtp_server, port, timeout=10)
-                if port != 25:  # Port 25 often doesn't support STARTTLS
-                    server.starttls()
-            
-            server.login(smtp_username, smtp_password)
-            server.sendmail(smtp_username, [smtp_username], msg.as_string())
-            server.quit()
-            
-            print(f"✅ SUCCESS: Port {port} works!")
-            return port
-            
-        except Exception as e:
-            print(f"❌ Port {port} failed: {e}")
-            continue
-    
-    return None
+    except requests.exceptions.ConnectionError:
+        print(f"❌ SendGrid connection error - cannot reach API")
+        return False
+    except Exception as e:
+        print(f"❌ SendGrid exception: {e}")
+        return False
 
 @app.route('/debug_email')
 @login_required
@@ -3077,14 +3045,14 @@ def email_gone_online_test():
     try:
         db.session.commit()
         
-        # Use a cleaner subject without emojis
+        print(f"🔧 Testing email for: {test_employee.email}")
+        print(f"🔧 Temporary password: {temp_password}")
+        
         subject = "Hercules HR System - Your Login Information"
-        body = f"""
-Dear {test_employee.full_name},
+        body = f"""Dear {test_employee.full_name},
 
 Your Hercules HR System account is now ready for access.
 
-LOGIN DETAILS:
 System URL: {server_url}
 Username: {test_employee.username}
 Temporary Password: {temp_password}
@@ -3096,17 +3064,20 @@ If you have any issues accessing the system, please contact the HR department.
 Best regards,
 Hercules HR Department
 """
-        # Send using SendGrid - now with correct verified sender
+        # Send using SendGrid with verified domain email
         email_sent = send_email_sendgrid(test_employee.email, subject, body)
         
         if email_sent:
             flash(f'Test email sent successfully to {test_employee.email}', 'success')
+            print(f"✅ Email test completed successfully")
         else:
             flash(f'Failed to send test email to {test_employee.email}', 'warning')
+            print(f"❌ Email test failed")
             
     except Exception as e:
         db.session.rollback()
         flash(f"Failed to reset password: {str(e)}", 'danger')
+        print(f"❌ Database error: {str(e)}")
 
     return redirect(url_for('dashboard'))
 
@@ -5328,32 +5299,7 @@ def leave_balance_history():
     return render_template('leave_balance_history.html', 
                          history_records=history_records,
                          employees=employees,
-                         admins=admins)
-
-@app.route('/test_email_system')
-@login_required
-def test_email_system():
-    """Test the email system"""
-    if current_user.user_type != 'admin':
-        flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    test_subject = "Hercules HR System Test"
-    test_body = "This is a test email from your Hercules HR system."
-    
-    # Send test email to yourself
-    success = send_email_webmail(
-        "it@hercules-engineering.com", 
-        test_subject, 
-        test_bodydd
-    )
-    
-    if success:
-        flash('Test email sent successfully!', 'success')
-    else:
-        flash('Failed to send test email.', 'danger')
-    
-    return redirect(url_for('dashboard'))
+                         admins=admins
 
 @app.route('/recruitment')
 @login_required
