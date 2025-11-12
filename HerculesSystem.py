@@ -3567,15 +3567,6 @@ def create_failed_emails_file():
 
     # You can paste your failed emails here or create the file manually
     failed_emails = [
-        "cheeyalymok@gmail.com",
-        "abu.ubaidah42@gmail.com",
-        "faizal7138@gmail.com",
-        "hazwansyafiq15799@gmail.com",
-        "myo285220@gmail.com",
-        "k.senkar@sisgroup.edu.my",
-        "naingsoeoo210421@gmail.com",
-        "natcyk1@hotmail.com",
-        "arissa.hanis97@gmail.com",
         "ainamumtaz8@gmail.com",
         "aishaarazii@gmail.com",
         "farhananorzelan97@gmail.com",
