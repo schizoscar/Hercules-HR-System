@@ -3101,51 +3101,65 @@ def email_gone_online():
         flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
 
-    employees = Employee.query.all()
+    # Query employees alphabetically by name
+    employees = Employee.query.order_by(Employee.full_name).all()
     if not employees:
         flash('No employees found to email.', 'warning')
         return redirect(url_for('dashboard'))
 
     server_url = "https://hercules-hr-system.onrender.com/"
     
-    # Optimized for 90 employees - smaller batches with delays
-    batch_size = 5  # Small batches to avoid memory issues
+    # More conservative batching for Render's free tier
+    batch_size = 3  # Smaller batches to avoid memory/timeout issues
     reset_count = 0
     email_success_count = 0
     email_failed_count = 0
     failed_emails = []
 
     print(f"🔧 Starting bulk email for {len(employees)} employees in batches of {batch_size}")
+    print(f"📝 Processing order: Alphabetical by name")
 
-    # Process employees in small batches with delays
-    for i in range(0, len(employees), batch_size):
-        batch = employees[i:i + batch_size]
-        temp_passwords = {}
-        
-        print(f"🔧 Processing batch {i//batch_size + 1}/{(len(employees)-1)//batch_size + 1}")
-        
-        # Step 1: Generate temporary passwords for this batch
-        for employee in batch:
-            temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
-            employee.password = generate_password_hash(temp_password)
-            temp_passwords[employee.id] = temp_password
-            reset_count += 1
+    try:
+        # Process employees in small batches with proper resource management
+        for batch_num, i in enumerate(range(0, len(employees), batch_size), 1):
+            batch = employees[i:i + batch_size]
+            temp_passwords = {}
+            total_batches = (len(employees) - 1) // batch_size + 1
+            
+            print(f"🔧 Processing batch {batch_num}/{total_batches} ({len(batch)} employees)")
+            
+            # Step 1: Generate temporary passwords for this batch
+            for employee in batch:
+                temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
+                employee.password = generate_password_hash(temp_password)
+                temp_passwords[employee.id] = temp_password
+                reset_count += 1
 
-        # Commit this batch
-        try:
-            db.session.commit()
-            print(f"✅ Batch {i//batch_size + 1} passwords reset successfully")
-        except Exception as e:
-            db.session.rollback()
-            flash(f"Failed to reset passwords at batch {i//batch_size + 1}: {str(e)}", 'danger')
-            return redirect(url_for('dashboard'))
-
-        # Step 2: Send emails for this batch with proper pacing
-        for j, employee in enumerate(batch):
+            # Commit this batch immediately to free memory
             try:
-                temp_password = temp_passwords[employee.id]
-                subject = "🎉 Hercules HR System is Live!"
-                body = f"""
+                db.session.commit()
+                print(f"✅ Batch {batch_num} passwords reset successfully")
+                
+                # Clear session to free memory - crucial for large operations
+                db.session.expire_all()
+                
+            except Exception as e:
+                db.session.rollback()
+                flash(f"Failed to reset passwords at batch {batch_num}: {str(e)}", 'danger')
+                return redirect(url_for('dashboard'))
+
+            # Step 2: Send emails for this batch with proper error handling
+            for j, employee in enumerate(batch, 1):
+                try:
+                    temp_password = temp_passwords.get(employee.id)
+                    if not temp_password:
+                        print(f"❌ No temp password for {employee.email}")
+                        email_failed_count += 1
+                        failed_emails.append(employee.email)
+                        continue
+
+                    subject = "🎉 Hercules HR System is Live!"
+                    body = f"""
 Dear {employee.full_name},
 
 Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
@@ -3174,37 +3188,47 @@ If you experience any issues accessing the system or have questions, please cont
 Best regards,
 Hercules IT Department
 """
-                # Send email with individual error handling
-                try:
-                    email_sent = send_email_sendgrid(employee.email, subject, body)
-                    if email_sent:
-                        email_success_count += 1
-                        print(f"✅ ({email_success_count}/{len(employees)}) Email sent to {employee.email}")
-                    else:
+                    # Send email with individual error handling
+                    try:
+                        email_sent = send_email_sendgrid(employee.email, subject, body)
+                        if email_sent:
+                            email_success_count += 1
+                            print(f"✅ ({email_success_count}/{len(employees)}) Email sent to {employee.full_name} ({employee.email})")
+                        else:
+                            email_failed_count += 1
+                            failed_emails.append(employee.email)
+                            print(f"❌ Failed to send email to {employee.email}")
+                    except Exception as email_error:
                         email_failed_count += 1
                         failed_emails.append(employee.email)
-                        print(f"❌ Failed to send email to {employee.email}")
-                except Exception as email_error:
+                        print(f"❌ Email exception for {employee.email}: {email_error}")
+                    
+                    # Add delay between emails to avoid rate limiting
+                    if j < len(batch):  # Don't delay after the last email in batch
+                        time.sleep(2)  # Reduced delay between emails
+                        
+                except Exception as e:
+                    print(f"❌ Error processing employee {employee.email}: {e}")
                     email_failed_count += 1
                     failed_emails.append(employee.email)
-                    print(f"❌ Email exception for {employee.email}: {email_error}")
-                
-                # Add delay between emails to avoid rate limiting
-                if j < len(batch) - 1:  # Don't delay after the last email in batch
-                    import time
-                    time.sleep(3)  # 3 second delay between emails
-                    
-            except Exception as e:
-                print(f"❌ Error processing employee {employee.email}: {e}")
-                email_failed_count += 1
-                failed_emails.append(employee.email)
-                continue
+                    continue
 
-        # Add delay between batches to avoid overwhelming the system
-        if i + batch_size < len(employees):  # Don't delay after the last batch
-            import time
-            print(f"⏳ Batch {i//batch_size + 1} completed. Taking a 10-second break...")
-            time.sleep(10)  # 10 second delay between batches
+            # Clear batch variables to free memory
+            del temp_passwords
+            del batch
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+
+            # Add delay between batches to avoid overwhelming the system
+            if batch_num < total_batches:  # Don't delay after the last batch
+                print(f"⏳ Batch {batch_num} completed. Taking a 5-second break...")
+                time.sleep(5)  # Reduced delay between batches
+
+    except Exception as e:
+        flash(f"Bulk email process interrupted: {str(e)}", 'danger')
+        return redirect(url_for('dashboard'))
 
     # Final summary
     print(f"🎉 Bulk email completed: {email_success_count} successful, {email_failed_count} failed")
