@@ -3094,72 +3094,100 @@ Hercules IT Department
 
     return redirect(url_for('dashboard'))
 
-@app.route('/admin/email_gone_online')
-@login_required
-def email_gone_online():
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to perform this action.', 'danger')
-        return redirect(url_for('dashboard'))
+# BULK EMAIL SENDING =========================================================================
 
-    # Query employees alphabetically by name
-    employees = Employee.query.order_by(Employee.full_name).all()
-    if not employees:
-        flash('No employees found to email.', 'warning')
-        return redirect(url_for('dashboard'))
+from threading import Thread
+import time
+import random
+import string
 
-    server_url = "https://hercules-hr-system.onrender.com/"
+# Global variable to track background task status
+background_task_status = {
+    'running': False,
+    'progress': 0,
+    'total': 0,
+    'success_count': 0,
+    'failed_count': 0,
+    'failed_emails': [],
+    'current_batch': 0,
+    'total_batches': 0,
+    'current_employee': ''
+}
+
+def send_bulk_emails_async(employee_ids, server_url, app_context):
+    """Background task for sending bulk emails with detailed logging"""
+    global background_task_status
     
-    # More conservative batching for Render's free tier
-    batch_size = 3  # Smaller batches to avoid memory/timeout issues
-    reset_count = 0
-    email_success_count = 0
-    email_failed_count = 0
-    failed_emails = []
-
-    print(f"🔧 Starting bulk email for {len(employees)} employees in batches of {batch_size}")
-    print(f"📝 Processing order: Alphabetical by name")
-
-    try:
-        # Process employees in small batches with proper resource management
-        for batch_num, i in enumerate(range(0, len(employees), batch_size), 1):
-            batch = employees[i:i + batch_size]
-            temp_passwords = {}
+    with app_context:
+        try:
+            # No need to re-import since we already have these at the top
+            background_task_status['running'] = True
+            background_task_status['total'] = len(employee_ids)
+            background_task_status['success_count'] = 0
+            background_task_status['failed_count'] = 0
+            background_task_status['failed_emails'] = []
+            background_task_status['progress'] = 0
+            
+            # Get employees in alphabetical order
+            employees = Employee.query.filter(Employee.id.in_(employee_ids))\
+                .order_by(Employee.full_name).all()
+            
+            if not employees:
+                print("❌ No employees found for bulk email")
+                background_task_status['running'] = False
+                return
+            
+            # Conservative batching for Render's free tier
+            batch_size = 3
             total_batches = (len(employees) - 1) // batch_size + 1
+            background_task_status['total_batches'] = total_batches
             
-            print(f"🔧 Processing batch {batch_num}/{total_batches} ({len(batch)} employees)")
+            print(f"🎯 Starting background bulk email for {len(employees)} employees")
+            print(f"📝 Processing order: Alphabetical by name")
+            print(f"📦 Batch size: {batch_size}, Total batches: {total_batches}")
             
-            # Step 1: Generate temporary passwords for this batch
-            for employee in batch:
-                temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
-                employee.password = generate_password_hash(temp_password)
-                temp_passwords[employee.id] = temp_password
-                reset_count += 1
-
-            # Commit this batch immediately to free memory
-            try:
-                db.session.commit()
-                print(f"✅ Batch {batch_num} passwords reset successfully")
+            reset_count = 0
+            
+            # Process employees in small batches
+            for batch_num, i in enumerate(range(0, len(employees), batch_size), 1):
+                batch = employees[i:i + batch_size]
+                background_task_status['current_batch'] = batch_num
                 
-                # Clear session to free memory - crucial for large operations
-                db.session.expire_all()
+                print(f"\n🔧 Processing batch {batch_num}/{total_batches} ({len(batch)} employees)")
                 
-            except Exception as e:
-                db.session.rollback()
-                flash(f"Failed to reset passwords at batch {batch_num}: {str(e)}", 'danger')
-                return redirect(url_for('dashboard'))
-
-            # Step 2: Send emails for this batch with proper error handling
-            for j, employee in enumerate(batch, 1):
+                temp_passwords = {}
+                
+                # Step 1: Generate temporary passwords for this batch
+                for employee in batch:
+                    temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
+                    employee.password = generate_password_hash(temp_password)
+                    temp_passwords[employee.id] = temp_password
+                    reset_count += 1
+                
+                # Commit this batch
                 try:
-                    temp_password = temp_passwords.get(employee.id)
-                    if not temp_password:
-                        print(f"❌ No temp password for {employee.email}")
-                        email_failed_count += 1
-                        failed_emails.append(employee.email)
-                        continue
-
-                    subject = "🎉 Hercules HR System is Live!"
-                    body = f"""
+                    db.session.commit()
+                    db.session.expire_all()  # Clear session to free memory
+                    print(f"✅ Batch {batch_num} passwords reset successfully")
+                except Exception as e:
+                    db.session.rollback()
+                    print(f"❌ Failed to reset passwords at batch {batch_num}: {str(e)}")
+                    continue
+                
+                # Step 2: Send emails for this batch
+                for j, employee in enumerate(batch, 1):
+                    background_task_status['current_employee'] = f"{employee.full_name} ({employee.email})"
+                    
+                    try:
+                        temp_password = temp_passwords.get(employee.id)
+                        if not temp_password:
+                            print(f"❌ No temp password for {employee.email}")
+                            background_task_status['failed_count'] += 1
+                            background_task_status['failed_emails'].append(employee.email)
+                            continue
+                        
+                        subject = "🎉 Hercules HR System is Live!"
+                        body = f"""
 Dear {employee.full_name},
 
 Great news! The Hercules HR System is now online and accessible from anywhere! Your password has been reset for security purposes. Please log in and update your password in the settings.
@@ -3188,65 +3216,127 @@ If you experience any issues accessing the system or have questions, please cont
 Best regards,
 Hercules IT Department
 """
-                    # Send email with individual error handling
-                    try:
-                        email_sent = send_email_sendgrid(employee.email, subject, body)
-                        if email_sent:
-                            email_success_count += 1
-                            print(f"✅ ({email_success_count}/{len(employees)}) Email sent to {employee.full_name} ({employee.email})")
-                        else:
-                            email_failed_count += 1
-                            failed_emails.append(employee.email)
-                            print(f"❌ Failed to send email to {employee.email}")
-                    except Exception as email_error:
-                        email_failed_count += 1
-                        failed_emails.append(employee.email)
-                        print(f"❌ Email exception for {employee.email}: {email_error}")
-                    
-                    # Add delay between emails to avoid rate limiting
-                    if j < len(batch):  # Don't delay after the last email in batch
-                        time.sleep(2)  # Reduced delay between emails
+                        # Send email
+                        try:
+                            email_sent = send_email_sendgrid(employee.email, subject, body)
+                            if email_sent:
+                                background_task_status['success_count'] += 1
+                                print(f"✅ ({background_task_status['success_count']}/{len(employees)}) Email sent to {employee.full_name} ({employee.email})")
+                            else:
+                                background_task_status['failed_count'] += 1
+                                background_task_status['failed_emails'].append(employee.email)
+                                print(f"❌ Failed to send email to {employee.email}")
+                        except Exception as email_error:
+                            background_task_status['failed_count'] += 1
+                            background_task_status['failed_emails'].append(employee.email)
+                            print(f"❌ Email exception for {employee.email}: {email_error}")
                         
-                except Exception as e:
-                    print(f"❌ Error processing employee {employee.email}: {e}")
-                    email_failed_count += 1
-                    failed_emails.append(employee.email)
-                    continue
-
-            # Clear batch variables to free memory
-            del temp_passwords
-            del batch
+                        # Update progress
+                        background_task_status['progress'] = background_task_status['success_count'] + background_task_status['failed_count']
+                        
+                        # Small delay between emails
+                        if j < len(batch):
+                            time.sleep(2)
+                            
+                    except Exception as e:
+                        print(f"❌ Error processing employee {employee.email}: {e}")
+                        background_task_status['failed_count'] += 1
+                        background_task_status['failed_emails'].append(employee.email)
+                        continue
+                
+                # Clear memory
+                del temp_passwords
+                del batch
+                import gc
+                gc.collect()
+                
+                # Delay between batches
+                if batch_num < total_batches:
+                    print(f"⏳ Batch {batch_num} completed. Taking a 5-second break...")
+                    time.sleep(5)
             
-            # Force garbage collection
-            import gc
-            gc.collect()
+            # Final summary
+            print(f"\n🎉 Bulk email background task completed!")
+            print(f"✅ {background_task_status['success_count']} emails sent successfully")
+            print(f"❌ {background_task_status['failed_count']} emails failed")
+            if background_task_status['failed_count'] > 0:
+                print(f"📧 Failed emails: {', '.join(background_task_status['failed_emails'][:10])}")
+            
+        except Exception as e:
+            print(f"💥 Critical error in background task: {e}")
+        finally:
+            background_task_status['running'] = False
+            background_task_status['current_employee'] = ''
 
-            # Add delay between batches to avoid overwhelming the system
-            if batch_num < total_batches:  # Don't delay after the last batch
-                print(f"⏳ Batch {batch_num} completed. Taking a 5-second break...")
-                time.sleep(5)  # Reduced delay between batches
-
-    except Exception as e:
-        flash(f"Bulk email process interrupted: {str(e)}", 'danger')
+@app.route('/admin/email_gone_online')
+@login_required
+def email_gone_online():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
 
-    # Final summary
-    print(f"🎉 Bulk email completed: {email_success_count} successful, {email_failed_count} failed")
+    global background_task_status
     
-    # Flash summary
-    flash_message = f"""
-Password reset and emailing completed!
-• {reset_count} passwords reset
-• {email_success_count} emails sent successfully
-• {email_failed_count} emails failed
-"""
-    if email_failed_count > 0:
-        flash_message += f"\nFailed emails (first 5): {', '.join(failed_emails[:5])}{'...' if len(failed_emails) > 5 else ''}"
-        flash(flash_message, 'warning')
-    else:
-        flash(flash_message, 'success')
+    # Check if task is already running
+    if background_task_status.get('running', False):
+        flash('Bulk email process is already running in the background. Please wait for it to complete.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    # Get all employee IDs in alphabetical order
+    employees = Employee.query.order_by(Employee.full_name).all()
+    if not employees:
+        flash('No employees found to email.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    employee_ids = [emp.id for emp in employees]
+    server_url = "https://hercules-hr-system.onrender.com/"
+
+    # Start background task
+    try:
+        thread = Thread(
+            target=send_bulk_emails_async, 
+            args=(employee_ids, server_url, app.app_context())
+        )
+        thread.daemon = True
+        thread.start()
+        
+        print(f"🚀 Started background email task for {len(employee_ids)} employees")
+        flash(f'Bulk email process started in background for {len(employee_ids)} employees. Check console logs for real-time progress.', 'info')
+        
+    except Exception as e:
+        flash(f'Failed to start background process: {str(e)}', 'danger')
+        print(f"❌ Failed to start background thread: {e}")
 
     return redirect(url_for('dashboard'))
+
+@app.route('/admin/email_progress')
+@login_required
+def email_progress():
+    """Endpoint to check progress of background email task"""
+    if current_user.user_type != 'admin':
+        return {'error': 'No permission'}, 403
+    
+    global background_task_status
+    
+    if not background_task_status.get('running', False):
+        return {
+            'status': 'completed',
+            'success_count': background_task_status.get('success_count', 0),
+            'failed_count': background_task_status.get('failed_count', 0),
+            'failed_emails': background_task_status.get('failed_emails', [])
+        }
+    
+    return {
+        'status': 'running',
+        'progress': background_task_status.get('progress', 0),
+        'total': background_task_status.get('total', 0),
+        'success_count': background_task_status.get('success_count', 0),
+        'failed_count': background_task_status.get('failed_count', 0),
+        'current_batch': background_task_status.get('current_batch', 0),
+        'total_batches': background_task_status.get('total_batches', 0),
+        'current_employee': background_task_status.get('current_employee', ''),
+        'percentage': round((background_task_status.get('progress', 0) / background_task_status.get('total', 1)) * 100, 1)
+    }
 
 @app.route('/reset_admin_password')
 def reset_admin_password():
