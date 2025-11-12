@@ -3353,13 +3353,13 @@ def retry_failed_emails():
         flash('Email process is already running in the background. Please wait for it to complete.', 'warning')
         return redirect(url_for('dashboard'))
 
-    # Get failed emails from the previous run
-    failed_emails = background_task_status.get('failed_emails', [])
+    # Read failed emails from text file
+    failed_emails = read_failed_emails_from_file()
     if not failed_emails:
-        flash('No failed emails found to retry.', 'info')
+        flash('No failed emails found in failed_emails.txt file.', 'info')
         return redirect(url_for('dashboard'))
 
-    print(f"🔄 Retrying {len(failed_emails)} failed emails")
+    print(f"🔄 Retrying {len(failed_emails)} failed emails from file")
     
     # Start background task for retrying failed emails
     try:
@@ -3371,7 +3371,7 @@ def retry_failed_emails():
         thread.start()
         
         print(f"🚀 Started retry email task for {len(failed_emails)} failed addresses")
-        flash(f'Retry process started for {len(failed_emails)} failed emails. Check console logs for progress.', 'info')
+        flash(f'Retry process started for {len(failed_emails)} failed emails from file. Check console logs for progress.', 'info')
         
     except Exception as e:
         flash(f'Failed to start retry process: {str(e)}', 'danger')
@@ -3379,8 +3379,36 @@ def retry_failed_emails():
 
     return redirect(url_for('dashboard'))
 
+def read_failed_emails_from_file():
+    """Read failed emails from failed_emails.txt file"""
+    try:
+        file_path = 'failed_emails.txt'
+        if not os.path.exists(file_path):
+            print("❌ failed_emails.txt file not found")
+            return []
+        
+        with open(file_path, 'r') as file:
+            emails = [line.strip() for line in file.readlines() if line.strip()]
+        
+        print(f"📧 Read {len(emails)} emails from failed_emails.txt")
+        return emails
+        
+    except Exception as e:
+        print(f"❌ Error reading failed_emails.txt: {e}")
+        return []
+
+def write_failed_emails_to_file(emails):
+    """Write failed emails to failed_emails.txt file"""
+    try:
+        with open('failed_emails.txt', 'w') as file:
+            for email in emails:
+                file.write(email + '\n')
+        print(f"📧 Saved {len(emails)} failed emails to failed_emails.txt")
+    except Exception as e:
+        print(f"❌ Error writing to failed_emails.txt: {e}")
+
 def retry_failed_emails_async(failed_emails, app_context):
-    """Background task to retry failed emails with better timeout handling"""
+    """Background task to retry failed emails from file"""
     global background_task_status
     
     with app_context:
@@ -3393,12 +3421,12 @@ def retry_failed_emails_async(failed_emails, app_context):
             background_task_status['progress'] = 0
             background_task_status['current_batch'] = 0
             background_task_status['total_batches'] = 1
-            background_task_status['current_employee'] = 'Retrying failed emails'
+            background_task_status['current_employee'] = 'Retrying failed emails from file'
 
-            print(f"🔄 Starting retry process for {len(failed_emails)} failed emails")
+            print(f"🔄 Starting retry process for {len(failed_emails)} failed emails from file")
             
-            # Very conservative settings for timeout-prone emails
-            batch_size = 2  # Even smaller batches for problematic emails
+            # Conservative settings for timeout-prone emails
+            batch_size = 2
             total_batches = (len(failed_emails) - 1) // batch_size + 1
             background_task_status['total_batches'] = total_batches
 
@@ -3414,7 +3442,10 @@ def retry_failed_emails_async(failed_emails, app_context):
             email_to_employee = {emp.email: emp for emp in employees}
             server_url = "https://hercules-hr-system.onrender.com/"
 
-            # Process in even smaller batches with longer delays
+            # Track which emails we still can't send to
+            still_failed_emails = []
+
+            # Process in small batches with longer delays
             for batch_num, i in enumerate(range(0, len(failed_emails), batch_size), 1):
                 batch_emails = failed_emails[i:i + batch_size]
                 background_task_status['current_batch'] = batch_num
@@ -3426,7 +3457,7 @@ def retry_failed_emails_async(failed_emails, app_context):
                     if not employee:
                         print(f"❌ Employee not found for email: {email}")
                         background_task_status['failed_count'] += 1
-                        background_task_status['failed_emails'].append(email)
+                        still_failed_emails.append(email)
                         continue
 
                     background_task_status['current_employee'] = f"{employee.full_name} ({employee.email})"
@@ -3442,7 +3473,7 @@ def retry_failed_emails_async(failed_emails, app_context):
                         db.session.rollback()
                         print(f"❌ Failed to reset password for {employee.email}: {e}")
                         background_task_status['failed_count'] += 1
-                        background_task_status['failed_emails'].append(email)
+                        still_failed_emails.append(email)
                         continue
 
                     subject = "🎉 Hercules HR System is Live! (Reminder)"
@@ -3478,12 +3509,12 @@ Hercules IT Department
                             print(f"✅ ({background_task_status['success_count']}/{len(failed_emails)}) Email successfully sent to {employee.full_name}")
                         else:
                             background_task_status['failed_count'] += 1
-                            background_task_status['failed_emails'].append(email)
+                            still_failed_emails.append(email)
                             print(f"❌ SendGrid returned failure for {employee.email}")
                             
                     except Exception as email_error:
                         background_task_status['failed_count'] += 1
-                        background_task_status['failed_emails'].append(email)
+                        still_failed_emails.append(email)
                         print(f"❌ Email exception for {employee.email}: {email_error}")
                     
                     # Update progress
@@ -3503,18 +3534,73 @@ Hercules IT Department
                     print(f"⏳ Batch {batch_num} completed. Taking a 15-second break...")
                     time.sleep(15)
 
+            # Update the failed emails file with any emails that still failed
+            if still_failed_emails:
+                write_failed_emails_to_file(still_failed_emails)
+                background_task_status['failed_emails'] = still_failed_emails
+            else:
+                # If all succeeded, delete the file
+                if os.path.exists('failed_emails.txt'):
+                    os.remove('failed_emails.txt')
+                    print("✅ All emails sent successfully! Removed failed_emails.txt")
+
             # Final summary
             print(f"\n🎉 Retry process completed!")
             print(f"✅ {background_task_status['success_count']} emails sent successfully")
             print(f"❌ {background_task_status['failed_count']} emails still failed")
             if background_task_status['failed_count'] > 0:
-                print(f"📧 Still failed emails: {', '.join(background_task_status['failed_emails'][:10])}")
+                print(f"📧 Still failed emails saved to failed_emails.txt: {len(still_failed_emails)} emails")
 
         except Exception as e:
             print(f"💥 Critical error in retry task: {e}")
         finally:
             background_task_status['running'] = False
             background_task_status['current_employee'] = ''
+
+@app.route('/admin/create_failed_emails_file')
+@login_required
+def create_failed_emails_file():
+    """Create a failed_emails.txt file with the current failed emails for manual editing"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # You can paste your failed emails here or create the file manually
+    failed_emails = [
+        "cheeyalymok@gmail.com",
+        "abu.ubaidah42@gmail.com",
+        "faizal7138@gmail.com",
+        "hazwansyafiq15799@gmail.com",
+        "myo285220@gmail.com",
+        "k.senkar@sisgroup.edu.my",
+        "naingsoeoo210421@gmail.com",
+        "natcyk1@hotmail.com",
+        "arissa.hanis97@gmail.com",
+        "ainamumtaz8@gmail.com",
+        "aishaarazii@gmail.com",
+        "farhananorzelan97@gmail.com",
+        "nadyrahanim@gmail.com",
+        "nurlailisalim97@gmail.com",
+        "phoehtoo16@gmail.com",
+        "kophyo198525@gmail.com",
+        "tamilarasu17795@yahoo.com",
+        "w4499133@gmail.com",
+        "vikramsaravanan1129@gmail.com",
+        "vishvanjohn@gmail.com",
+        "matheven3876@gmail.com",
+        "naylin19101995@gmail.com",
+        "phyu07184@gmail.com",
+        "gthar6115@gmail.com",
+        "yewcc-wg23@student.tarc.edu.my",
+        "yezaw5686@gmail.com",
+        "sunilyonjan802@gmail.com",
+        "zarniaung9550@gmail.com",
+        "ko603830@gmail.com"
+    ]
+    
+    write_failed_emails_to_file(failed_emails)
+    flash(f'Created failed_emails.txt with {len(failed_emails)} email addresses. You can now edit this file and use the retry function.', 'success')
+    return redirect(url_for('dashboard'))
 
 @app.route('/admin/clear_failed_emails')
 @login_required
@@ -3530,7 +3616,6 @@ def clear_failed_emails():
     
     flash(f'Cleared {failed_count} failed emails from the list.', 'info')
     return redirect(url_for('dashboard'))
-
 
 # END OF BULK EMAILS ===================================================================
 
