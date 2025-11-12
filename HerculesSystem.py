@@ -3338,6 +3338,202 @@ def email_progress():
         'percentage': round((background_task_status.get('progress', 0) / background_task_status.get('total', 1)) * 100, 1)
     }
 
+# RETRY FAILED EMAILS ==================================================================
+@app.route('/admin/retry_failed_emails')
+@login_required
+def retry_failed_emails():
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    global background_task_status
+    
+    # Check if task is already running
+    if background_task_status.get('running', False):
+        flash('Email process is already running in the background. Please wait for it to complete.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    # Get failed emails from the previous run
+    failed_emails = background_task_status.get('failed_emails', [])
+    if not failed_emails:
+        flash('No failed emails found to retry.', 'info')
+        return redirect(url_for('dashboard'))
+
+    print(f"🔄 Retrying {len(failed_emails)} failed emails")
+    
+    # Start background task for retrying failed emails
+    try:
+        thread = Thread(
+            target=retry_failed_emails_async, 
+            args=(failed_emails, app.app_context())
+        )
+        thread.daemon = True
+        thread.start()
+        
+        print(f"🚀 Started retry email task for {len(failed_emails)} failed addresses")
+        flash(f'Retry process started for {len(failed_emails)} failed emails. Check console logs for progress.', 'info')
+        
+    except Exception as e:
+        flash(f'Failed to start retry process: {str(e)}', 'danger')
+        print(f"❌ Failed to start retry thread: {e}")
+
+    return redirect(url_for('dashboard'))
+
+def retry_failed_emails_async(failed_emails, app_context):
+    """Background task to retry failed emails with better timeout handling"""
+    global background_task_status
+    
+    with app_context:
+        try:
+            background_task_status['running'] = True
+            background_task_status['total'] = len(failed_emails)
+            background_task_status['success_count'] = 0
+            background_task_status['failed_count'] = 0
+            background_task_status['failed_emails'] = []
+            background_task_status['progress'] = 0
+            background_task_status['current_batch'] = 0
+            background_task_status['total_batches'] = 1
+            background_task_status['current_employee'] = 'Retrying failed emails'
+
+            print(f"🔄 Starting retry process for {len(failed_emails)} failed emails")
+            
+            # Very conservative settings for timeout-prone emails
+            batch_size = 2  # Even smaller batches for problematic emails
+            total_batches = (len(failed_emails) - 1) // batch_size + 1
+            background_task_status['total_batches'] = total_batches
+
+            # Get employee data for these emails
+            employees = Employee.query.filter(Employee.email.in_(failed_emails))\
+                .order_by(Employee.full_name).all()
+            
+            if not employees:
+                print("❌ No employees found for the failed email addresses")
+                background_task_status['running'] = False
+                return
+
+            email_to_employee = {emp.email: emp for emp in employees}
+            server_url = "https://hercules-hr-system.onrender.com/"
+
+            # Process in even smaller batches with longer delays
+            for batch_num, i in enumerate(range(0, len(failed_emails), batch_size), 1):
+                batch_emails = failed_emails[i:i + batch_size]
+                background_task_status['current_batch'] = batch_num
+                
+                print(f"\n🔧 Retry batch {batch_num}/{total_batches} ({len(batch_emails)} emails)")
+
+                for j, email in enumerate(batch_emails, 1):
+                    employee = email_to_employee.get(email)
+                    if not employee:
+                        print(f"❌ Employee not found for email: {email}")
+                        background_task_status['failed_count'] += 1
+                        background_task_status['failed_emails'].append(email)
+                        continue
+
+                    background_task_status['current_employee'] = f"{employee.full_name} ({employee.email})"
+                    
+                    # Generate a new temporary password for retry
+                    try:
+                        temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
+                        employee.password = generate_password_hash(temp_password)
+                        db.session.commit()
+                        db.session.expire_all()
+                        print(f"✅ Password reset for {employee.email}")
+                    except Exception as e:
+                        db.session.rollback()
+                        print(f"❌ Failed to reset password for {employee.email}: {e}")
+                        background_task_status['failed_count'] += 1
+                        background_task_status['failed_emails'].append(email)
+                        continue
+
+                    subject = "🎉 Hercules HR System is Live! (Reminder)"
+                    body = f"""
+Dear {employee.full_name},
+
+This is a reminder about our new HR system! The Hercules HR System is now online and accessible from anywhere. Your password has been reset for security purposes.
+
+🔗 Your New Login Portal:
+{server_url}
+
+👤 Your Login Details:
+• Username: {employee.username}
+• Temporary Password: {temp_password}
+
+🚀 What's New:
+• Access the system from any device with internet
+• No more local network restrictions
+• Same great features, now with more flexibility
+
+If you experience any issues accessing the system or have questions, please contact the HR department.
+
+Best regards,
+Hercules IT Department
+"""
+                    # Send email with longer timeout handling
+                    try:
+                        print(f"📧 Attempting to send to {employee.email}...")
+                        email_sent = send_email_sendgrid(employee.email, subject, body)
+                        
+                        if email_sent:
+                            background_task_status['success_count'] += 1
+                            print(f"✅ ({background_task_status['success_count']}/{len(failed_emails)}) Email successfully sent to {employee.full_name}")
+                        else:
+                            background_task_status['failed_count'] += 1
+                            background_task_status['failed_emails'].append(email)
+                            print(f"❌ SendGrid returned failure for {employee.email}")
+                            
+                    except Exception as email_error:
+                        background_task_status['failed_count'] += 1
+                        background_task_status['failed_emails'].append(email)
+                        print(f"❌ Email exception for {employee.email}: {email_error}")
+                    
+                    # Update progress
+                    background_task_status['progress'] = background_task_status['success_count'] + background_task_status['failed_count']
+                    
+                    # Longer delay between retry emails (5 seconds)
+                    if j < len(batch_emails):
+                        print("⏳ Waiting 5 seconds before next email...")
+                        time.sleep(5)
+
+                # Clear memory
+                import gc
+                gc.collect()
+
+                # Longer delay between batches (15 seconds)
+                if batch_num < total_batches:
+                    print(f"⏳ Batch {batch_num} completed. Taking a 15-second break...")
+                    time.sleep(15)
+
+            # Final summary
+            print(f"\n🎉 Retry process completed!")
+            print(f"✅ {background_task_status['success_count']} emails sent successfully")
+            print(f"❌ {background_task_status['failed_count']} emails still failed")
+            if background_task_status['failed_count'] > 0:
+                print(f"📧 Still failed emails: {', '.join(background_task_status['failed_emails'][:10])}")
+
+        except Exception as e:
+            print(f"💥 Critical error in retry task: {e}")
+        finally:
+            background_task_status['running'] = False
+            background_task_status['current_employee'] = ''
+
+@app.route('/admin/clear_failed_emails')
+@login_required
+def clear_failed_emails():
+    """Clear the failed emails list"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    global background_task_status
+    failed_count = len(background_task_status.get('failed_emails', []))
+    background_task_status['failed_emails'] = []
+    
+    flash(f'Cleared {failed_count} failed emails from the list.', 'info')
+    return redirect(url_for('dashboard'))
+
+
+# END OF BULK EMAILS ===================================================================
+
 @app.route('/reset_admin_password')
 def reset_admin_password():
     admin_user = Employee.query.filter_by(username='admin').first()
