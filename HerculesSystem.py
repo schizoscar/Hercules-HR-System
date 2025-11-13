@@ -3331,11 +3331,7 @@ Hercules IT Department
 @app.route('/repurchase')
 @login_required
 def repurchase():
-    """Main repurchase page for factory workers"""
-    if current_user.user_type != 'factory':
-        flash('This feature is only available for factory workers.', 'danger')
-        return redirect(url_for('dashboard'))
-    
+    """Main repurchase page for all users"""
     # Get categories for dropdown
     categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
     
@@ -3353,6 +3349,79 @@ def repurchase():
                          form=form,
                          categories=categories,
                          pending_order=pending_order)
+
+@app.route('/edit_repurchase_order/<int:order_id>', methods=['GET', 'POST'])
+@login_required
+def edit_repurchase_order(order_id):
+    """Edit a submitted repurchase order"""
+    order = RepurchaseOrder.query.get_or_404(order_id)
+    
+    # Check if user owns this order and it's still submitted
+    if order.employee_id != current_user.id:
+        flash('You can only edit your own orders.', 'danger')
+        return redirect(url_for('repurchase'))
+    
+    if order.status != 'submitted':
+        flash('Only submitted orders can be edited.', 'danger')
+        return redirect(url_for('repurchase'))
+    
+    if request.method == 'POST':
+        try:
+            # Update order remarks
+            order.remarks = request.form.get('remarks', '')
+            
+            # Update quantities for items
+            for item in order.items:
+                quantity_field = f'quantity_{item.id}'
+                if quantity_field in request.form:
+                    item.quantity = int(request.form[quantity_field])
+            
+            # Update total items count
+            order.total_items = sum(item.quantity for item in order.items)
+            
+            db.session.commit()
+            flash('Order updated successfully!', 'success')
+            return redirect(url_for('repurchase'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating order: {str(e)}', 'danger')
+    
+    categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
+    return render_template('edit_repurchase_order.html', 
+                         order=order,
+                         categories=categories)
+
+@app.route('/delete_repurchase_order/<int:order_id>', methods=['POST'])
+@login_required
+def delete_repurchase_order(order_id):
+    """Delete a submitted repurchase order"""
+    order = RepurchaseOrder.query.get_or_404(order_id)
+    
+    # Check if user owns this order and it's still submitted
+    if order.employee_id != current_user.id:
+        flash('You can only delete your own orders.', 'danger')
+        return redirect(url_for('repurchase'))
+    
+    if order.status != 'submitted':
+        flash('Only submitted orders can be deleted.', 'danger')
+        return redirect(url_for('repurchase'))
+    
+    try:
+        # Delete all order items first
+        RepurchaseOrderItem.query.filter_by(order_id=order.id).delete()
+        
+        # Then delete the order
+        db.session.delete(order)
+        db.session.commit()
+        
+        flash('Order deleted successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting order: {str(e)}', 'danger')
+    
+    return redirect(url_for('repurchase'))
 
 @app.route('/get_category_items/<int:category_id>')
 @login_required
@@ -3493,11 +3562,7 @@ def remove_repurchase_item(item_id):
 @app.route('/submit_repurchase_order', methods=['POST'])
 @login_required
 def submit_repurchase_order():
-    """Submit the repurchase order"""
-    if current_user.user_type != 'factory':
-        flash('This feature is only available for factory workers.', 'danger')
-        return redirect(url_for('dashboard'))
-    
+    """Submit the repurchase order - moves it from current to history"""
     try:
         # Get the pending order
         pending_order = RepurchaseOrder.query.filter_by(
@@ -3509,12 +3574,13 @@ def submit_repurchase_order():
             flash('No items in your order to submit.', 'warning')
             return redirect(url_for('repurchase'))
         
-        # Add submission timestamp and remarks if any
+        # Update order status and timestamp
         pending_order.order_date = datetime.utcnow()
         pending_order.remarks = request.form.get('final_remarks', '')
+        # Status remains 'submitted' until admin action
         
         db.session.commit()
-        flash('Order submitted successfully! Admin will review your request.', 'success')
+        flash('Order submitted successfully! Admin will review your request. You can now create a new order.', 'success')
         
     except Exception as e:
         db.session.rollback()

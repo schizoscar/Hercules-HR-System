@@ -104,7 +104,6 @@
 </div>
 
 <style>
-    /* Reuse the same styles from previous templates */
     .dashboard-container {
         width: 100%;
         padding: 20px;
@@ -153,4 +152,110 @@
         background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
     }
     
-    .
+    .btn-danger {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    }
+    
+    .btn-info {
+        background: linear-gradient(135deg, #4facfe 0%, #2986cc 100%);
+    }
+    
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    th {
+        background: rgba(67, 97, 238, 0.1);
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        color: #666;
+    }
+
+    .dark-theme th,
+    .dark-theme td {
+        color: #e4e8f0;
+    }
+    
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+
+    .dark-theme tr:hover {
+        background: rgba(76, 201, 240, 0.1);
+    }
+    
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .status-submitted {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+    }
+    
+    .status-approved {
+        background: rgba(40, 167, 69, 0.2);
+        color: #28a745;
+    }
+    
+    .status-rejected {
+        background: rgba(220, 53, 69, 0.2);
+        color: #dc3545;
+    }
+    
+    .status-completed {
+        background: rgba(23, 162, 184, 0.2);
+        color: #17a2b8;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 10px;
+        }
+        
+        .glass {
+            padding: 15px;
+        }
+        
+        table {
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 8px;
+        }
+        
+        .btn {
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        td:nth-child(2), th:nth-child(2),
+        td:nth-child(4), th:nth-child(4) {
+            display: none;
+        }
+    }
+</style>
+{% endblock %}
