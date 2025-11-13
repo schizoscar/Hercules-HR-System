@@ -3335,7 +3335,7 @@ def repurchase():
     # Get categories for dropdown
     categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
     
-    # Get user's current pending order (only one draft order allowed at a time)
+    # Get user's current pending order (only orders with 'submitted' status are current)
     pending_order = RepurchaseOrder.query.filter_by(
         employee_id=current_user.id, 
         status='submitted'
@@ -3356,13 +3356,13 @@ def edit_repurchase_order(order_id):
     """Edit a submitted repurchase order"""
     order = RepurchaseOrder.query.get_or_404(order_id)
     
-    # Check if user owns this order and it's still submitted
+    # Check if user owns this order and it's still pending review
     if order.employee_id != current_user.id:
         flash('You can only edit your own orders.', 'danger')
         return redirect(url_for('repurchase'))
     
-    if order.status != 'submitted':
-        flash('Only submitted orders can be edited.', 'danger')
+    if order.status != 'pending_review':  # Changed from 'submitted'
+        flash('Only orders pending review can be edited.', 'danger')
         return redirect(url_for('repurchase'))
     
     if request.method == 'POST':
@@ -3398,13 +3398,13 @@ def delete_repurchase_order(order_id):
     """Delete a submitted repurchase order"""
     order = RepurchaseOrder.query.get_or_404(order_id)
     
-    # Check if user owns this order and it's still submitted
+    # Check if user owns this order and it's still pending review
     if order.employee_id != current_user.id:
         flash('You can only delete your own orders.', 'danger')
         return redirect(url_for('repurchase'))
     
-    if order.status != 'submitted':
-        flash('Only submitted orders can be deleted.', 'danger')
+    if order.status != 'pending_review':  # Changed from 'submitted'
+        flash('Only orders pending review can be deleted.', 'danger')
         return redirect(url_for('repurchase'))
     
     try:
@@ -3572,7 +3572,8 @@ def submit_repurchase_order():
             flash('No items in your order to submit.', 'warning')
             return redirect(url_for('repurchase'))
         
-        # Update order with submission timestamp and remarks
+        # Change status to 'pending_review' so it moves to recent orders
+        pending_order.status = 'pending_review'
         pending_order.order_date = datetime.utcnow()
         pending_order.remarks = request.form.get('final_remarks', '')
         

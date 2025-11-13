@@ -20,7 +20,7 @@
                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">Status</label>
                     <select name="status" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
                         <option value="">All Status</option>
-                        <option value="submitted" {% if status_filter == 'submitted' %}selected{% endif %}>Submitted</option>
+                        <option value="pending_review" {% if status_filter == 'pending_review' %}selected{% endif %}>Pending Review</option>
                         <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
                         <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
                         <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
