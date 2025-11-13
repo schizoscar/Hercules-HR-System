@@ -3608,120 +3608,6 @@ def update_order_status(order_id, status):
     
     return redirect(url_for('admin_repurchase_order_detail', order_id=order_id))
 
-# Database initialization function for dummy data
-@app.route('/admin/init_repurchase_data')
-@login_required
-def init_repurchase_data():
-    """Initialize repurchase system with dummy data (Admin only)"""
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to initialize repurchase data.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    try:
-        # Create categories
-        categories_data = [
-            {'name': 'Safety Equipment', 'description': 'Personal protective equipment and safety gear'},
-            {'name': 'Tools', 'description': 'Hand tools and equipment'},
-            {'name': 'Consumables', 'description': 'Items that get used up regularly'},
-            {'name': 'Electrical', 'description': 'Electrical components and supplies'},
-            {'name': 'Mechanical', 'description': 'Mechanical parts and components'}
-        ]
-        
-        for cat_data in categories_data:
-            category = RepurchaseCategory.query.filter_by(name=cat_data['name']).first()
-            if not category:
-                category = RepurchaseCategory(
-                    name=cat_data['name'],
-                    description=cat_data['description']
-                )
-                db.session.add(category)
-        
-        db.session.commit()
-        
-        # Create items for each category
-        items_data = {
-            'Safety Equipment': [
-                'Safety Gloves', 'Safety Glasses', 'Hard Hat', 'Safety Boots', 'Ear Protection',
-                'Face Shield', 'High-Vis Vest', 'Respirator Mask', 'Safety Harness'
-            ],
-            'Tools': [
-                'Screwdriver Set', 'Wrench Set', 'Pliers', 'Hammer', 'Tape Measure',
-                'Utility Knife', 'Drill Bits', 'Socket Set', 'Allen Key Set'
-            ],
-            'Consumables': [
-                'Masking Tape', 'Duct Tape', 'Sandpaper', 'Gloves', 'Rags',
-                'Cleaning Solvent', 'Lubricating Oil', 'Adhesive', 'Marker Pens'
-            ],
-            'Electrical': [
-                'Electrical Tape', 'Wire Connectors', 'Cable Ties', 'Fuses', 'Circuit Breakers',
-                'Wire', 'Switches', 'Plug Sockets', 'Light Bulbs'
-            ],
-            'Mechanical': [
-                'Bolts', 'Nuts', 'Washers', 'Bearings', 'Belts',
-                'Gaskets', 'O-rings', 'Springs', 'Fasteners'
-            ]
-        }
-        
-        for category_name, item_names in items_data.items():
-            category = RepurchaseCategory.query.filter_by(name=category_name).first()
-            if category:
-                for item_name in item_names:
-                    item = RepurchaseItem.query.filter_by(name=item_name, category_id=category.id).first()
-                    if not item:
-                        item = RepurchaseItem(
-                            name=item_name,
-                            category_id=category.id,
-                            description=f'{item_name} for factory use'
-                        )
-                        db.session.add(item)
-        
-        db.session.commit()
-        flash('Repurchase system initialized with dummy data successfully!', 'success')
-        
-    except Exception as e:
-        db.session.rollback()
-        flash(f'Error initializing repurchase data: {str(e)}', 'danger')
-    
-    return redirect(url_for('dashboard'))
-
-@app.route('/admin/migrate_repurchase_tables')
-@login_required
-def migrate_repurchase_tables():
-    """Create repurchase tables in PostgreSQL"""
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to perform this action.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    try:
-        # This will create all tables that don't exist
-        db.create_all()
-        
-        # Check if tables were created
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        existing_tables = inspector.get_table_names()
-        
-        repurchase_tables = ['repurchase_category', 'repurchase_item', 'repurchase_order', 'repurchase_order_item']
-        created_tables = []
-        
-        for table in repurchase_tables:
-            if table in existing_tables:
-                created_tables.append(f"✅ {table}")
-            else:
-                created_tables.append(f"❌ {table} (failed)")
-        
-        result = "<h3>Repurchase Tables Migration</h3><ul>"
-        for table_result in created_tables:
-            result += f"<li>{table_result}</li>"
-        result += "</ul>"
-        
-        flash(f'Repurchase tables migration completed! {result}', 'success')
-        return redirect(url_for('dashboard'))
-        
-    except Exception as e:
-        flash(f'Error creating repurchase tables: {str(e)}', 'danger')
-        return redirect(url_for('dashboard'))
-
 @app.route('/admin/init_repurchase_data')
 @login_required
 def init_repurchase_data():
@@ -3917,6 +3803,44 @@ def init_repurchase_data():
         flash(f'Error initializing repurchase data: {str(e)}', 'danger')
     
     return redirect(url_for('dashboard'))
+
+@app.route('/admin/migrate_repurchase_tables')
+@login_required
+def migrate_repurchase_tables():
+    """Create repurchase tables in PostgreSQL"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # This will create all tables that don't exist
+        db.create_all()
+        
+        # Check if tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        repurchase_tables = ['repurchase_category', 'repurchase_item', 'repurchase_order', 'repurchase_order_item']
+        created_tables = []
+        
+        for table in repurchase_tables:
+            if table in existing_tables:
+                created_tables.append(f"✅ {table}")
+            else:
+                created_tables.append(f"❌ {table} (failed)")
+        
+        result = "<h3>Repurchase Tables Migration</h3><ul>"
+        for table_result in created_tables:
+            result += f"<li>{table_result}</li>"
+        result += "</ul>"
+        
+        flash(f'Repurchase tables migration completed! {result}', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        flash(f'Error creating repurchase tables: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
 #======================================= END of orders + data migration ========================================
 @app.route('/admin/email_gone_online')
 @login_required
