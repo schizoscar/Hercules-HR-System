@@ -3335,17 +3335,11 @@ def repurchase():
     # Get categories for dropdown
     categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
     
-    # Get user's pending order if exists (only one submitted order allowed)
+    # Get user's current pending order (only one draft order allowed at a time)
     pending_order = RepurchaseOrder.query.filter_by(
         employee_id=current_user.id, 
         status='submitted'
     ).first()
-    
-    # If user has a submitted order, show message
-    if pending_order:
-        has_submitted_order = True
-    else:
-        has_submitted_order = False
     
     form = RepurchaseOrderForm()
     form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
@@ -3354,8 +3348,7 @@ def repurchase():
     return render_template('repurchase.html', 
                          form=form,
                          categories=categories,
-                         pending_order=pending_order,
-                         has_submitted_order=has_submitted_order)
+                         pending_order=pending_order)
 
 @app.route('/edit_repurchase_order/<int:order_id>', methods=['GET', 'POST'])
 @login_required
@@ -3448,9 +3441,9 @@ def get_category_items(category_id):
 @app.route('/add_repurchase_item', methods=['POST'])
 @login_required
 def add_repurchase_item():
-    """Add item to repurchase order"""
-    if current_user.user_type != 'factory':
-        flash('This feature is only available for factory workers.', 'danger')
+    """Add item to repurchase order - creates new order if needed"""
+    if current_user.user_type not in ['factory', 'office', 'supervisor', 'admin']:
+        flash('This feature is only available for authorized users.', 'danger')
         return redirect(url_for('dashboard'))
     
     form = RepurchaseOrderForm()
@@ -3567,7 +3560,7 @@ def remove_repurchase_item(item_id):
 @app.route('/submit_repurchase_order', methods=['POST'])
 @login_required
 def submit_repurchase_order():
-    """Submit the repurchase order - moves it from current to history"""
+    """Submit the repurchase order and clear current order"""
     try:
         # Get the pending order
         pending_order = RepurchaseOrder.query.filter_by(
@@ -3582,10 +3575,9 @@ def submit_repurchase_order():
         # Update order with submission timestamp and remarks
         pending_order.order_date = datetime.utcnow()
         pending_order.remarks = request.form.get('final_remarks', '')
-        # The order remains with status 'submitted' but is no longer the "current" order
         
         db.session.commit()
-        flash('Order submitted successfully! Admin will review your request. You can now create a new order.', 'success')
+        flash('Order submitted successfully! You can now create a new order.', 'success')
         
     except Exception as e:
         db.session.rollback()
