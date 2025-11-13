@@ -3608,6 +3608,44 @@ def update_order_status(order_id, status):
     
     return redirect(url_for('admin_repurchase_order_detail', order_id=order_id))
 
+@app.route('/admin/migrate_repurchase_tables')
+@login_required
+def migrate_repurchase_tables():
+    """Create repurchase tables in PostgreSQL"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # This will create all tables that don't exist
+        db.create_all()
+        
+        # Check if tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        repurchase_tables = ['repurchase_category', 'repurchase_item', 'repurchase_order', 'repurchase_order_item']
+        created_tables = []
+        
+        for table in repurchase_tables:
+            if table in existing_tables:
+                created_tables.append(f"✅ {table}")
+            else:
+                created_tables.append(f"❌ {table} (failed)")
+        
+        result = "<h3>Repurchase Tables Migration</h3><ul>"
+        for table_result in created_tables:
+            result += f"<li>{table_result}</li>"
+        result += "</ul>"
+        
+        flash(f'Repurchase tables migration completed! {result}', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        flash(f'Error creating repurchase tables: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
 @app.route('/admin/init_repurchase_data')
 @login_required
 def init_repurchase_data():
