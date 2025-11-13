@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Order Details - {{ order.id }}{% endblock %}
+
+{% block header %}Order Details{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Order Header -->
+    <div class="glass">
+        <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 20px;">
+            <div>
+                <h2 style="margin-bottom: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; background-clip: text; color: transparent;">
+                    Order #{{ order.id }}
+                </h2>
+                <p style="color: #666; margin: 0;">Submitted on {{ order.order_date.strftime('%d %B %Y at %H:%M') }}</p>
+            </div>
+            
+            <div style="text-align: right;">
+                <div class="status-badge status-{{ order.status }}" style="font-size: 1rem; padding: 8px 16px;">
+                    {{ order.status|title }}
+                </div>
+                <p style="color: #666; margin: 5px 0 0 0;">by {{ order.employee.full_name }}</p>
+            </div>
+        </div>
+        
+        {% if order.remarks %}
+        <div style="margin-top: 20px; padding: 15px; background: rgba(67, 97, 238, 0.05); border-radius: 8px;">
+            <strong>Order Remarks:</strong>
+            <p style="margin: 5px 0 0 0; color: #666;">{{ order.remarks }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Order Items -->
+    <div class="glass">
+        <h3 style="margin-bottom: 20px;">Order Items ({{ order.total_items }} items)</h3>
+        
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item Name</th>
+                        <th>Category</th>
+                        <th>Quantity</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in order.items %}
+                    <tr>
+                        <td>{{ item.item.name }}</td>
+                        <td>{{ item.item.category.name }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ item.remarks or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    {% if order.status == 'submitted' %}
+    <div class="glass">
+        <h3 style="margin-bottom: 15px;">Order Actions</h3>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <a href="{{ url_for('update_order_status', order_id=order.id, status='approved') }}" 
+               class="btn btn-success" style="display: inline-flex; align-items: center; gap: 8px;"
+               onclick="return confirm('Approve this order?')">
+                <span>✅</span>
+                <span>Approve Order</span>
+            </a>
+            
+            <a href="{{ url_for('update_order_status', order_id=order.id, status='rejected') }}" 
+               class="btn btn-danger" style="display: inline-flex; align-items: center; gap: 8px;"
+               onclick="return confirm('Reject this order?')">
+                <span>❌</span>
+                <span>Reject Order</span>
+            </a>
+        </div>
+    </div>
+    {% elif order.status == 'approved' %}
+    <div class="glass">
+        <h3 style="margin-bottom: 15px;">Order Actions</h3>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <a href="{{ url_for('update_order_status', order_id=order.id, status='completed') }}" 
+               class="btn btn-info" style="display: inline-flex; align-items: center; gap: 8px;"
+               onclick="return confirm('Mark this order as completed?')">
+                <span>📦</span>
+                <span>Mark as Completed</span>
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Back Button -->
+    <div class="glass" style="text-align: center;">
+        <a href="{{ url_for('admin_repurchase_orders') }}" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
+            <span>←</span>
+            <span>Back to Orders</span>
+        </a>
+    </div>
+</div>
+
+<style>
+    /* Reuse the same styles from previous templates */
+    .dashboard-container {
+        width: 100%;
+        padding: 20px;
+    }
+    
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+
+    .dark-theme .glass {
+        background: var(--dark-container);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: none;
+        cursor: pointer;
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    }
+    
+    .

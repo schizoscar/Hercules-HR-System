@@ -525,6 +525,7 @@
                 {% if current_user.is_authenticated %}
                     <!-- Factory Worker Menu (Limited Access) -->
                     {% if current_user.user_type == 'factory' %}
+                    <li><a href="{{ url_for('repurchase') }}" class="{% if request.endpoint == 'repurchase' %}active{% endif %}">🛒 Repurchase Items</a></li>
                     <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">🌴 Leaves Management</a></li>
                     <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
                     <li><a href="{{ url_for('logout') }}">🚪 Logout</a></li>
@@ -539,6 +540,7 @@
                     <li><a href="{{ url_for('leaves') }}" class="{% if request.endpoint == 'leaves' %}active{% endif %}">🌴 Leaves Management</a></li>
                     <li><a href="{{ url_for('payroll') }}" class="{% if request.endpoint == 'payroll' %}active{% endif %}">💳 Payroll</a></li>
                     <li><a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">📈 Reports</a></li>
+                    <li><a href="{{ url_for('admin_repurchase_orders') }}" class="{% if request.endpoint == 'admin_repurchase_orders' %}active{% endif %}">🛒 Repurchase Orders</a></li>
                     <li><a href="{{ url_for('recruitment') }}" class="{% if request.endpoint == 'recruitment' %}active{% endif %}">💼 Recruitment</a></li>
                     <li><a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">⚙️ Settings</a></li>
 

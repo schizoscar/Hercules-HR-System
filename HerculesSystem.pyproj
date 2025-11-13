@@ -44,6 +44,9 @@
     <Content Include="templates\edit_attendance.html" />
     <Content Include="templates\payroll.html" />
     <Content Include="templates\payroll_audit.html" />
+    <Content Include="templates\repurchase.html" />
+    <Content Include="templates\admin_repurchase_orders.html" />
+    <Content Include="templates\admin_repurchase_order_detail.html" />
     <Content Include="templates\time_reports.html" />
   </ItemGroup>
   <!-- Static files (CSS/JS) -->

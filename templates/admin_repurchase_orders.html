@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+
+{% block title %}Repurchase Orders{% endblock %}
+
+{% block header %}Repurchase Orders Management{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <div class="glass">
+        <h2 style="margin-bottom: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; background-clip: text; color: transparent;">
+            Repurchase Orders
+        </h2>
+        
+        <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
+            <a href="{{ url_for('init_repurchase_data') }}" class="btn btn-info" style="display: inline-flex; align-items: center; gap: 8px;"
+               onclick="return confirm('Initialize with dummy data? This will add sample categories and items.')">
+                <span>📦</span>
+                <span>Initialize Dummy Data</span>
+            </a>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="glass" style="padding: 20px;">
+            <h3 style="margin-bottom: 15px;">Filter Orders</h3>
+            <form method="GET" action="{{ url_for('admin_repurchase_orders') }}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Status</label>
+                    <select name="status" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
+                        <option value="">All Status</option>
+                        <option value="submitted" {% if status_filter == 'submitted' %}selected{% endif %}>Submitted</option>
+                        <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                        <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                        <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Employee</label>
+                    <select name="employee_id" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
+                        <option value="">All Employees</option>
+                        {% for emp in employees %}
+                        <option value="{{ emp.id }}" {% if employee_id == emp.id|string %}selected{% endif %}>{{ emp.full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">From Date</label>
+                    <input type="date" name="date_from" value="{{ date_from }}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
+                </div>
+                
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">To Date</label>
+                    <input type="date" name="date_to" value="{{ date_to }}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ddd;">
+                </div>
+                
+                <div style="display: flex; align-items: end;">
+                    <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                        Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Orders List Section -->
+    <div class="glass">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <h3 style="margin: 0;">
+                {% if status_filter %}
+                    {{ status_filter|title }} Orders
+                {% else %}
+                    All Orders
+                {% endif %}
+            </h3>
+            <span style="color: #6c757d; font-weight: 500;">
+                {{ orders|length }} order(s) found
+            </span>
+        </div>
+        
+        {% if orders %}
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Order Date</th>
+                        <th>Employee</th>
+                        <th>Items</th>
+                        <th>Status</th>
+                        <th>Remarks</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td>{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</td>
+                        <td>{{ order.employee.full_name }}</td>
+                        <td>{{ order.total_items }} items</td>
+                        <td>
+                            <span class="status-badge status-{{ order.status }}">
+                                {{ order.status|title }}
+                            </span>
+                        </td>
+                        <td>{{ order.remarks or '-' }}</td>
+                        <td>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <a href="{{ url_for('admin_repurchase_order_detail', order_id=order.id) }}" 
+                                   class="btn btn-sm btn-primary" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;">
+                                    <span>👁️</span>
+                                    <span>View</span>
+                                </a>
+                                
+                                {% if order.status == 'submitted' %}
+                                <a href="{{ url_for('update_order_status', order_id=order.id, status='approved') }}" 
+                                   class="btn btn-sm btn-success" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                   onclick="return confirm('Approve this order?')">
+                                    <span>✅</span>
+                                    <span>Approve</span>
+                                </a>
+                                <a href="{{ url_for('update_order_status', order_id=order.id, status='rejected') }}" 
+                                   class="btn btn-sm btn-danger" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                   onclick="return confirm('Reject this order?')">
+                                    <span>❌</span>
+                                    <span>Reject</span>
+                                </a>
+                                {% elif order.status == 'approved' %}
+                                <a href="{{ url_for('update_order_status', order_id=order.id, status='completed') }}" 
+                                   class="btn btn-sm btn-info" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                   onclick="return confirm('Mark this order as completed?')">
+                                    <span>📦</span>
+                                    <span>Complete</span>
+                                </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="no-orders" style="text-align: center; padding: 40px;">
+            <p style="font-size: 1.1rem; color: #666; margin-bottom: 10px;">No orders found</p>
+            <p style="color: #999;">{% if status_filter %}Try changing your filters{% else %}No repurchase orders have been submitted yet{% endif %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    /* Reuse the same styles from the previous template */
+    .dashboard-container {
+        width: 100%;
+        padding: 20px;
+    }
+    
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+
+    .dark-theme .glass {
+        background: var(--dark-container);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: none;
+        cursor: pointer;
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .btn-info {
+        background: linear-gradient(135deg, #4facfe 0%, #2986cc 100%);  
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    }
+    
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    
+    th {
+        background: rgba(67, 97, 238, 0.1);
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        color: #666;
+    }
+
+    .dark-theme th,
+    .dark-theme td,
+    .dark-theme .no-orders p {
+        color: #e4e8f0;
+    }
+    
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+
+    .dark-theme tr:hover {
+        background: rgba(76, 201, 240, 0.1);
+    }
+    
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .status-submitted {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+    }
+    
+    .status-approved {
+        background: rgba(40, 167, 69, 0.2);
+        color: #28a745;
+    }
+    
+    .status-rejected {
+        background: rgba(220, 53, 69, 0.2);
+        color: #dc3545;
+    }
+    
+    .status-completed {
+        background: rgba(23, 162, 184, 0.2);
+        color: #17a2b8;
+    }
+
+    select,
+    input[type="date"] {
+        transition: all 0.3s ease;
+        border: 1px solid #ddd;
+    }
+
+    select:focus,
+    input[type="date"]:focus {
+        outline: none;
+        border-color: #4361ee;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    .dark-theme select,
+    .dark-theme input[type="date"] {
+        background: rgba(37, 42, 64, 0.8);
+        border-color: rgba(255, 255, 255, 0.1);
+        color: #e4e8f0;
+    }
+
+    .dark-theme select:focus,
+    .dark-theme input[type="date"]:focus {
+        border-color: #4361ee;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+    }
+
+    .no-orders {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 10px;
+        }
+        
+        .glass {
+            padding: 15px;
+        }
+        
+        table {
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 8px;
+        }
+        
+        .btn {
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+
+        form[style*="grid-template-columns"] {
+            grid-template-columns: 1fr !important;
+        }
+
+        td:last-child div {
+            flex-direction: column;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        td:nth-child(2), th:nth-child(2),
+        td:nth-child(5), th:nth-child(5) {
+            display: none;
+        }
+    }
+</style>
+{% endblock %}

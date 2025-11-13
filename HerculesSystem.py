@@ -1212,6 +1212,56 @@ class PayrollAuditTrail(db.Model):
     employee = db.relationship('Employee', foreign_keys=[employee_id], backref='payroll_audits')
     performer = db.relationship('Employee', foreign_keys=[performed_by])
 
+class RepurchaseCategory(db.Model):
+    __tablename__ = 'repurchase_category'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship to items
+    items = db.relationship('RepurchaseItem', back_populates='category', lazy=True)
+
+class RepurchaseItem(db.Model):
+    __tablename__ = 'repurchase_item'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    category_id = db.Column(db.Integer, db.ForeignKey('repurchase_category.id'), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship to category
+    category = db.relationship('RepurchaseCategory', back_populates='items')
+    # Relationship to order items
+    order_items = db.relationship('RepurchaseOrderItem', back_populates='item', lazy=True)
+
+class RepurchaseOrder(db.Model):
+    __tablename__ = 'repurchase_order'
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employee.id'), nullable=False)
+    order_date = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default='submitted')  # submitted, approved, rejected, completed
+    total_items = db.Column(db.Integer, default=0)
+    remarks = db.Column(db.Text)
+    
+    # Relationships
+    employee = db.relationship('Employee', backref=db.backref('repurchase_orders', lazy=True))
+    items = db.relationship('RepurchaseOrderItem', back_populates='order', lazy=True, cascade='all, delete-orphan')
+
+class RepurchaseOrderItem(db.Model):
+    __tablename__ = 'repurchase_order_item'
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('repurchase_order.id'), nullable=False)
+    item_id = db.Column(db.Integer, db.ForeignKey('repurchase_item.id'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    remarks = db.Column(db.Text)
+    
+    # Relationships
+    order = db.relationship('RepurchaseOrder', back_populates='items')
+    item = db.relationship('RepurchaseItem', back_populates='order_items')
+
 # Forms
 class LoginForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
@@ -1332,6 +1382,14 @@ class LeaveBalanceHistory(db.Model):
     
     employee = db.relationship('Employee', foreign_keys=[employee_id], backref=db.backref('balance_changes', lazy=True))
     admin = db.relationship('Employee', foreign_keys=[admin_id])
+
+class RepurchaseOrderForm(FlaskForm):
+    category_id = SelectField('Category', coerce=int, validators=[DataRequired()])
+    item_id = SelectField('Item', coerce=int, validators=[DataRequired()])
+    quantity = DecimalField('Quantity', validators=[DataRequired()])
+    remarks = TextAreaField('Remarks (Optional)')
+    submit = SubmitField('Add Item')
+    submit_order = SubmitField('Submit Order')
 
 # Database Migration Functions
 def add_is_admin_column():
@@ -3268,6 +3326,598 @@ Hercules IT Department
             background_task_status['running'] = False
             background_task_status['current_employee'] = ''
 
+
+#======================================= orders + data migration ========================================
+@app.route('/repurchase')
+@login_required
+def repurchase():
+    """Main repurchase page for factory workers"""
+    if current_user.user_type != 'factory':
+        flash('This feature is only available for factory workers.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get categories for dropdown
+    categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
+    
+    # Get user's pending order if exists
+    pending_order = RepurchaseOrder.query.filter_by(
+        employee_id=current_user.id, 
+        status='submitted'
+    ).first()
+    
+    form = RepurchaseOrderForm()
+    form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
+    form.item_id.choices = [(0, 'Select Category First')]
+    
+    return render_template('repurchase.html', 
+                         form=form,
+                         categories=categories,
+                         pending_order=pending_order)
+
+@app.route('/get_category_items/<int:category_id>')
+@login_required
+def get_category_items(category_id):
+    """Get items for a specific category (AJAX endpoint)"""
+    if current_user.user_type != 'factory':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    items = RepurchaseItem.query.filter_by(
+        category_id=category_id, 
+        is_active=True
+    ).order_by(RepurchaseItem.name).all()
+    
+    items_data = [{'id': item.id, 'name': item.name} for item in items]
+    return jsonify(items_data)
+
+@app.route('/add_repurchase_item', methods=['POST'])
+@login_required
+def add_repurchase_item():
+    """Add item to repurchase order"""
+    if current_user.user_type != 'factory':
+        flash('This feature is only available for factory workers.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    form = RepurchaseOrderForm()
+    
+    # Dynamically populate choices for validation
+    categories = RepurchaseCategory.query.filter_by(is_active=True).all()
+    form.category_id.choices = [(cat.id, cat.name) for cat in categories]
+    
+    if form.category_id.data:
+        items = RepurchaseItem.query.filter_by(
+            category_id=form.category_id.data, 
+            is_active=True
+        ).all()
+        form.item_id.choices = [(item.id, item.name) for item in items]
+    
+    if form.validate_on_submit():
+        try:
+            # Get or create pending order
+            pending_order = RepurchaseOrder.query.filter_by(
+                employee_id=current_user.id, 
+                status='submitted'
+            ).first()
+            
+            if not pending_order:
+                pending_order = RepurchaseOrder(
+                    employee_id=current_user.id,
+                    status='submitted',
+                    total_items=0
+                )
+                db.session.add(pending_order)
+                db.session.flush()  # Get the ID without committing
+            
+            # Check if item already exists in order
+            existing_item = RepurchaseOrderItem.query.filter_by(
+                order_id=pending_order.id,
+                item_id=form.item_id.data
+            ).first()
+            
+            if existing_item:
+                # Update existing item quantity
+                existing_item.quantity += form.quantity.data
+                existing_item.remarks = form.remarks.data or existing_item.remarks
+            else:
+                # Add new item to order
+                order_item = RepurchaseOrderItem(
+                    order_id=pending_order.id,
+                    item_id=form.item_id.data,
+                    quantity=form.quantity.data,
+                    remarks=form.remarks.data
+                )
+                db.session.add(order_item)
+            
+            # Update total items count
+            pending_order.total_items = sum(item.quantity for item in pending_order.items)
+            
+            db.session.commit()
+            flash('Item added to order successfully!', 'success')
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding item: {str(e)}', 'danger')
+    
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{getattr(form, field).label.text}: {error}', 'danger')
+    
+    return redirect(url_for('repurchase'))
+
+@app.route('/remove_repurchase_item/<int:item_id>', methods=['POST'])
+@login_required
+def remove_repurchase_item(item_id):
+    """Remove item from repurchase order"""
+    if current_user.user_type != 'factory':
+        flash('This feature is only available for factory workers.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Get the pending order for current user
+        pending_order = RepurchaseOrder.query.filter_by(
+            employee_id=current_user.id, 
+            status='submitted'
+        ).first()
+        
+        if not pending_order:
+            flash('No pending order found.', 'warning')
+            return redirect(url_for('repurchase'))
+        
+        # Find and remove the item
+        order_item = RepurchaseOrderItem.query.filter_by(
+            id=item_id,
+            order_id=pending_order.id
+        ).first()
+        
+        if order_item:
+            db.session.delete(order_item)
+            
+            # Update total items count
+            pending_order.total_items = sum(item.quantity for item in pending_order.items)
+            
+            # If no items left, delete the order
+            if pending_order.total_items == 0:
+                db.session.delete(pending_order)
+            
+            db.session.commit()
+            flash('Item removed from order successfully!', 'success')
+        else:
+            flash('Item not found in your order.', 'warning')
+            
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error removing item: {str(e)}', 'danger')
+    
+    return redirect(url_for('repurchase'))
+
+@app.route('/submit_repurchase_order', methods=['POST'])
+@login_required
+def submit_repurchase_order():
+    """Submit the repurchase order"""
+    if current_user.user_type != 'factory':
+        flash('This feature is only available for factory workers.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Get the pending order
+        pending_order = RepurchaseOrder.query.filter_by(
+            employee_id=current_user.id, 
+            status='submitted'
+        ).first()
+        
+        if not pending_order or not pending_order.items:
+            flash('No items in your order to submit.', 'warning')
+            return redirect(url_for('repurchase'))
+        
+        # Add submission timestamp and remarks if any
+        pending_order.order_date = datetime.utcnow()
+        pending_order.remarks = request.form.get('final_remarks', '')
+        
+        db.session.commit()
+        flash('Order submitted successfully! Admin will review your request.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error submitting order: {str(e)}', 'danger')
+    
+    return redirect(url_for('repurchase'))
+
+@app.route('/admin/repurchase_orders')
+@login_required
+def admin_repurchase_orders():
+    """Admin view of all repurchase orders"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to view repurchase orders.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Get filter parameters
+    status_filter = request.args.get('status', '')
+    employee_id = request.args.get('employee_id', '')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    
+    # Build query
+    query = RepurchaseOrder.query
+    
+    if status_filter:
+        query = query.filter(RepurchaseOrder.status == status_filter)
+    
+    if employee_id:
+        query = query.filter(RepurchaseOrder.employee_id == employee_id)
+    
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
+            query = query.filter(RepurchaseOrder.order_date >= date_from_obj)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
+            query = query.filter(RepurchaseOrder.order_date <= date_to_obj)
+        except ValueError:
+            pass
+    
+    orders = query.order_by(RepurchaseOrder.order_date.desc()).all()
+    employees = Employee.query.filter_by(user_type='factory').all()
+    
+    return render_template('admin_repurchase_orders.html',
+                         orders=orders,
+                         employees=employees,
+                         status_filter=status_filter,
+                         employee_id=employee_id,
+                         date_from=date_from,
+                         date_to=date_to)
+
+@app.route('/admin/repurchase_order/<int:order_id>')
+@login_required
+def admin_repurchase_order_detail(order_id):
+    """Admin view of specific repurchase order details"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to view repurchase orders.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    order = RepurchaseOrder.query.get_or_404(order_id)
+    
+    return render_template('admin_repurchase_order_detail.html', order=order)
+
+@app.route('/admin/update_order_status/<int:order_id>/<status>')
+@login_required
+def update_order_status(order_id, status):
+    """Update repurchase order status"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to update orders.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        order = RepurchaseOrder.query.get_or_404(order_id)
+        
+        if status not in ['approved', 'rejected', 'completed']:
+            flash('Invalid status.', 'danger')
+            return redirect(url_for('admin_repurchase_order_detail', order_id=order_id))
+        
+        order.status = status
+        db.session.commit()
+        
+        flash(f'Order status updated to {status}.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error updating order status: {str(e)}', 'danger')
+    
+    return redirect(url_for('admin_repurchase_order_detail', order_id=order_id))
+
+# Database initialization function for dummy data
+@app.route('/admin/init_repurchase_data')
+@login_required
+def init_repurchase_data():
+    """Initialize repurchase system with dummy data (Admin only)"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to initialize repurchase data.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Create categories
+        categories_data = [
+            {'name': 'Safety Equipment', 'description': 'Personal protective equipment and safety gear'},
+            {'name': 'Tools', 'description': 'Hand tools and equipment'},
+            {'name': 'Consumables', 'description': 'Items that get used up regularly'},
+            {'name': 'Electrical', 'description': 'Electrical components and supplies'},
+            {'name': 'Mechanical', 'description': 'Mechanical parts and components'}
+        ]
+        
+        for cat_data in categories_data:
+            category = RepurchaseCategory.query.filter_by(name=cat_data['name']).first()
+            if not category:
+                category = RepurchaseCategory(
+                    name=cat_data['name'],
+                    description=cat_data['description']
+                )
+                db.session.add(category)
+        
+        db.session.commit()
+        
+        # Create items for each category
+        items_data = {
+            'Safety Equipment': [
+                'Safety Gloves', 'Safety Glasses', 'Hard Hat', 'Safety Boots', 'Ear Protection',
+                'Face Shield', 'High-Vis Vest', 'Respirator Mask', 'Safety Harness'
+            ],
+            'Tools': [
+                'Screwdriver Set', 'Wrench Set', 'Pliers', 'Hammer', 'Tape Measure',
+                'Utility Knife', 'Drill Bits', 'Socket Set', 'Allen Key Set'
+            ],
+            'Consumables': [
+                'Masking Tape', 'Duct Tape', 'Sandpaper', 'Gloves', 'Rags',
+                'Cleaning Solvent', 'Lubricating Oil', 'Adhesive', 'Marker Pens'
+            ],
+            'Electrical': [
+                'Electrical Tape', 'Wire Connectors', 'Cable Ties', 'Fuses', 'Circuit Breakers',
+                'Wire', 'Switches', 'Plug Sockets', 'Light Bulbs'
+            ],
+            'Mechanical': [
+                'Bolts', 'Nuts', 'Washers', 'Bearings', 'Belts',
+                'Gaskets', 'O-rings', 'Springs', 'Fasteners'
+            ]
+        }
+        
+        for category_name, item_names in items_data.items():
+            category = RepurchaseCategory.query.filter_by(name=category_name).first()
+            if category:
+                for item_name in item_names:
+                    item = RepurchaseItem.query.filter_by(name=item_name, category_id=category.id).first()
+                    if not item:
+                        item = RepurchaseItem(
+                            name=item_name,
+                            category_id=category.id,
+                            description=f'{item_name} for factory use'
+                        )
+                        db.session.add(item)
+        
+        db.session.commit()
+        flash('Repurchase system initialized with dummy data successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error initializing repurchase data: {str(e)}', 'danger')
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/admin/migrate_repurchase_tables')
+@login_required
+def migrate_repurchase_tables():
+    """Create repurchase tables in PostgreSQL"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # This will create all tables that don't exist
+        db.create_all()
+        
+        # Check if tables were created
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        repurchase_tables = ['repurchase_category', 'repurchase_item', 'repurchase_order', 'repurchase_order_item']
+        created_tables = []
+        
+        for table in repurchase_tables:
+            if table in existing_tables:
+                created_tables.append(f"✅ {table}")
+            else:
+                created_tables.append(f"❌ {table} (failed)")
+        
+        result = "<h3>Repurchase Tables Migration</h3><ul>"
+        for table_result in created_tables:
+            result += f"<li>{table_result}</li>"
+        result += "</ul>"
+        
+        flash(f'Repurchase tables migration completed! {result}', 'success')
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        flash(f'Error creating repurchase tables: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/admin/init_repurchase_data')
+@login_required
+def init_repurchase_data():
+    """Initialize repurchase system with complete categories and items (Admin only)"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to initialize repurchase data.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Complete categories and items data
+        categories_data = [
+            {
+                'name': 'STEEL PLATES, ROUND BAR, ETC.',
+                'description': 'Steel plates, round bars, flat bars, I-beams and related steel products',
+                'items': [
+                    'Steel Plates', 'Round Bar', 'Flat Bar', 'I-Beam'
+                ]
+            },
+            {
+                'name': 'STAINLESS STEEL, BRASS PRODUCTS, ETC.',
+                'description': 'Stainless steel and brass materials and products',
+                'items': [
+                    'Stainless Steel Plates', 'Brass Flat Bar'
+                ]
+            },
+            {
+                'name': 'BOLTS, FASTENERS, ETC.',
+                'description': 'Bolts, nuts, washers, stud bars and fastening components',
+                'items': [
+                    'Bolts', 'Nuts', 'Washers', 'Stud Bar'
+                ]
+            },
+            {
+                'name': 'PTFE, ETC.',
+                'description': 'PTFE materials including plain, etched, dimpled varieties and UHMW-PE',
+                'items': [
+                    'Plain PTFE', 'Etched PTFE', 'Dimpled PTFE', 'Etched PTFE Tape', 'UHMW-PE'
+                ]
+            },
+            {
+                'name': 'RUBBER PRODUCTS, ETC.',
+                'description': 'Rubber seals, compression seals, nylon cords and rubber compounds',
+                'items': [
+                    'Compression Seals', 'Rubber Seals', 'Nylon Cord', 'SMR 20 CV', 'SMR 20', 
+                    'Customised Reclaimed Rubber', 'S40 V', 'Skim Block'
+                ]
+            },
+            {
+                'name': 'PAINT COATING PRODUCTS, ETC.',
+                'description': 'Paint coatings, chemicals and surface treatment products',
+                'items': [
+                    'Paint Coating', 'Trichloroethylene', 'Chemlok', 'Megum'
+                ]
+            },
+            {
+                'name': 'CHEMICAL PRODUCTS, ETC.',
+                'description': 'Chemical compounds, additives and industrial chemicals',
+                'items': [
+                    'Flexsys-Santoflex 77PD', 'Carbon Black 330', 'Carbon Black N220', 'Toulene', 
+                    'Tuladan Oil', 'Stearic Acid', 'TMTD', 'CBS', 'PVI', 'MBTS', 'TMQ', 
+                    'H3236 WAX', 'Sulphur', '6PPD', 'ETU', 'OPDA', 'CLAY', 'DFR 903'
+                ]
+            },
+            {
+                'name': 'LUBRICANTS PRODUCTS, ETC.',
+                'description': 'Industrial lubricants, oils and greases',
+                'items': [
+                    'Silicon Grease for PTFE', 'Hydraulic Oil', 'Engine Oil', 'Compressor Oil'
+                ]
+            },
+            {
+                'name': 'CASTING SERVICES, ETC.',
+                'description': 'Metal casting services and related manufacturing',
+                'items': [
+                    'Steel Casting'
+                ]
+            },
+            {
+                'name': 'MEASURING INSTRUMENTS & EQUIPMENTS, ETC.',
+                'description': 'Precision measuring instruments and equipment',
+                'items': [
+                    'Measuring Instruments', 'PLC'
+                ]
+            },
+            {
+                'name': 'MACHINERY & EQUIPMENTS, ETC.',
+                'description': 'Industrial machinery, motors and manufacturing equipment',
+                'items': [
+                    'Machineries', 'Motors', 'Welding Machine', 'Lathe Machine', 'Milling Machine', 
+                    'CNC Lathing Machine', 'Laser Cutting Machine', 'Rubber Moulding Press'
+                ]
+            },
+            {
+                'name': 'MACHINE TOOLS & ABRASIVES, ETC.',
+                'description': 'Machine tools, cutting tools and abrasive products',
+                'items': [
+                    'Grinder', 'Handrill', 'Cutting Tools', 'Grinding Disc', 'Cutting Disc', 
+                    'Drill Bits', 'Machine Taps'
+                ]
+            },
+            {
+                'name': 'CONSTRUCTION MATERIALS, GROUT, ETC.',
+                'description': 'Construction materials, grouts and epoxy compounds',
+                'items': [
+                    'Non Shrink Grout', 'Construction Epoxy'
+                ]
+            },
+            {
+                'name': 'CONSTRUCTION MACHINERY, ETC.',
+                'description': 'Construction equipment and machinery',
+                'items': [
+                    'Handrill', 'Grinder', 'Blower', 'Grout Pump'
+                ]
+            },
+            {
+                'name': 'CALIBRATION SERVICES',
+                'description': 'Calibration services for measuring instruments and equipment',
+                'items': [
+                    'Calibration Services for Measuring Instruments & Equipments'
+                ]
+            },
+            {
+                'name': 'GALVANIZING SERVICES',
+                'description': 'Steel galvanizing and metal treatment services',
+                'items': [
+                    'Steel Plates Galvanizing Services'
+                ]
+            },
+            {
+                'name': 'HARDWARE, CONSUMABLE PRODUCTS, ETC.',
+                'description': 'Miscellaneous hardware, tools and consumable products',
+                'items': [
+                    'Miscellaneous Hardware', 'Tools'
+                ]
+            },
+            {
+                'name': 'HYDRAULIC EQUIPMENTS, SERVICES, ETC.',
+                'description': 'Hydraulic equipment, components and maintenance services',
+                'items': [
+                    'Hydraulic Jacks', 'Manifold', 'Hose', 'Pressure Gauge'
+                ]
+            },
+            {
+                'name': 'LOGISTIC SERVICES, ETC.',
+                'description': 'Logistics and delivery services',
+                'items': [
+                    'Logistic Services', 'Delivery Services'
+                ]
+            },
+            {
+                'name': 'STATIONERY, PRINTING SERVICES, ETC.',
+                'description': 'Stationery products and printing services',
+                'items': [
+                    'Stationery Products', 'Printing Services'
+                ]
+            }
+        ]
+        
+        created_categories = 0
+        created_items = 0
+        
+        # Create categories and items
+        for cat_data in categories_data:
+            # Check if category already exists
+            category = RepurchaseCategory.query.filter_by(name=cat_data['name']).first()
+            if not category:
+                category = RepurchaseCategory(
+                    name=cat_data['name'],
+                    description=cat_data['description']
+                )
+                db.session.add(category)
+                db.session.flush()  # Get the ID
+                created_categories += 1
+            
+            # Create items for this category
+            for item_name in cat_data['items']:
+                item = RepurchaseItem.query.filter_by(name=item_name, category_id=category.id).first()
+                if not item:
+                    item = RepurchaseItem(
+                        name=item_name,
+                        category_id=category.id,
+                        description=f'{item_name} - {cat_data["description"]}'
+                    )
+                    db.session.add(item)
+                    created_items += 1
+        
+        db.session.commit()
+        
+        flash(f'Repurchase system initialized successfully! Created {created_categories} categories and {created_items} items.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error initializing repurchase data: {str(e)}', 'danger')
+    
+    return redirect(url_for('dashboard'))
+#======================================= END of orders + data migration ========================================
 @app.route('/admin/email_gone_online')
 @login_required
 def email_gone_online():
@@ -3338,277 +3988,6 @@ def email_progress():
         'percentage': round((background_task_status.get('progress', 0) / background_task_status.get('total', 1)) * 100, 1)
     }
 
-# RETRY FAILED EMAILS ==================================================================
-@app.route('/admin/retry_failed_emails')
-@login_required
-def retry_failed_emails():
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to perform this action.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    global background_task_status
-    
-    # Check if task is already running
-    if background_task_status.get('running', False):
-        flash('Email process is already running in the background. Please wait for it to complete.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    # Read failed emails from text file
-    failed_emails = read_failed_emails_from_file()
-    if not failed_emails:
-        flash('No failed emails found in failed_emails.txt file.', 'info')
-        return redirect(url_for('dashboard'))
-
-    print(f"🔄 Retrying {len(failed_emails)} failed emails from file")
-    
-    # Start background task for retrying failed emails
-    try:
-        thread = Thread(
-            target=retry_failed_emails_async, 
-            args=(failed_emails, app.app_context())
-        )
-        thread.daemon = True
-        thread.start()
-        
-        print(f"🚀 Started retry email task for {len(failed_emails)} failed addresses")
-        flash(f'Retry process started for {len(failed_emails)} failed emails from file. Check console logs for progress.', 'info')
-        
-    except Exception as e:
-        flash(f'Failed to start retry process: {str(e)}', 'danger')
-        print(f"❌ Failed to start retry thread: {e}")
-
-    return redirect(url_for('dashboard'))
-
-def read_failed_emails_from_file():
-    """Read failed emails from failed_emails.txt file"""
-    try:
-        file_path = 'failed_emails.txt'
-        if not os.path.exists(file_path):
-            print("❌ failed_emails.txt file not found")
-            return []
-        
-        with open(file_path, 'r') as file:
-            emails = [line.strip() for line in file.readlines() if line.strip()]
-        
-        print(f"📧 Read {len(emails)} emails from failed_emails.txt")
-        return emails
-        
-    except Exception as e:
-        print(f"❌ Error reading failed_emails.txt: {e}")
-        return []
-
-def write_failed_emails_to_file(emails):
-    """Write failed emails to failed_emails.txt file"""
-    try:
-        with open('failed_emails.txt', 'w') as file:
-            for email in emails:
-                file.write(email + '\n')
-        print(f"📧 Saved {len(emails)} failed emails to failed_emails.txt")
-    except Exception as e:
-        print(f"❌ Error writing to failed_emails.txt: {e}")
-
-def retry_failed_emails_async(failed_emails, app_context):
-    """Background task to retry failed emails from file"""
-    global background_task_status
-    
-    with app_context:
-        try:
-            background_task_status['running'] = True
-            background_task_status['total'] = len(failed_emails)
-            background_task_status['success_count'] = 0
-            background_task_status['failed_count'] = 0
-            background_task_status['failed_emails'] = []
-            background_task_status['progress'] = 0
-            background_task_status['current_batch'] = 0
-            background_task_status['total_batches'] = 1
-            background_task_status['current_employee'] = 'Retrying failed emails from file'
-
-            print(f"🔄 Starting retry process for {len(failed_emails)} failed emails from file")
-            
-            # Conservative settings for timeout-prone emails
-            batch_size = 2
-            total_batches = (len(failed_emails) - 1) // batch_size + 1
-            background_task_status['total_batches'] = total_batches
-
-            # Get employee data for these emails
-            employees = Employee.query.filter(Employee.email.in_(failed_emails))\
-                .order_by(Employee.full_name).all()
-            
-            if not employees:
-                print("❌ No employees found for the failed email addresses")
-                background_task_status['running'] = False
-                return
-
-            email_to_employee = {emp.email: emp for emp in employees}
-            server_url = "https://hercules-hr-system.onrender.com/"
-
-            # Track which emails we still can't send to
-            still_failed_emails = []
-
-            # Process in small batches with longer delays
-            for batch_num, i in enumerate(range(0, len(failed_emails), batch_size), 1):
-                batch_emails = failed_emails[i:i + batch_size]
-                background_task_status['current_batch'] = batch_num
-                
-                print(f"\n🔧 Retry batch {batch_num}/{total_batches} ({len(batch_emails)} emails)")
-
-                for j, email in enumerate(batch_emails, 1):
-                    employee = email_to_employee.get(email)
-                    if not employee:
-                        print(f"❌ Employee not found for email: {email}")
-                        background_task_status['failed_count'] += 1
-                        still_failed_emails.append(email)
-                        continue
-
-                    background_task_status['current_employee'] = f"{employee.full_name} ({employee.email})"
-                    
-                    # Generate a new temporary password for retry
-                    try:
-                        temp_password = ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(10))
-                        employee.password = generate_password_hash(temp_password)
-                        db.session.commit()
-                        db.session.expire_all()
-                        print(f"✅ Password reset for {employee.email}")
-                    except Exception as e:
-                        db.session.rollback()
-                        print(f"❌ Failed to reset password for {employee.email}: {e}")
-                        background_task_status['failed_count'] += 1
-                        still_failed_emails.append(email)
-                        continue
-
-                    subject = "🎉 Hercules HR System is Live! (Reminder)"
-                    body = f"""
-Dear {employee.full_name},
-
-This is a reminder about our new HR system! The Hercules HR System is now online and accessible from anywhere. Your password has been reset for security purposes.
-
-🔗 Your New Login Portal:
-{server_url}
-
-👤 Your Login Details:
-• Username: {employee.username}
-• Temporary Password: {temp_password}
-
-🚀 What's New:
-• Access the system from any device with internet
-• No more local network restrictions
-• Same great features, now with more flexibility
-
-If you experience any issues accessing the system or have questions, please contact the HR department.
-
-Best regards,
-Hercules IT Department
-"""
-                    # Send email with longer timeout handling
-                    try:
-                        print(f"📧 Attempting to send to {employee.email}...")
-                        email_sent = send_email_sendgrid(employee.email, subject, body)
-                        
-                        if email_sent:
-                            background_task_status['success_count'] += 1
-                            print(f"✅ ({background_task_status['success_count']}/{len(failed_emails)}) Email successfully sent to {employee.full_name}")
-                        else:
-                            background_task_status['failed_count'] += 1
-                            still_failed_emails.append(email)
-                            print(f"❌ SendGrid returned failure for {employee.email}")
-                            
-                    except Exception as email_error:
-                        background_task_status['failed_count'] += 1
-                        still_failed_emails.append(email)
-                        print(f"❌ Email exception for {employee.email}: {email_error}")
-                    
-                    # Update progress
-                    background_task_status['progress'] = background_task_status['success_count'] + background_task_status['failed_count']
-                    
-                    # Longer delay between retry emails (5 seconds)
-                    if j < len(batch_emails):
-                        print("⏳ Waiting 5 seconds before next email...")
-                        time.sleep(5)
-
-                # Clear memory
-                import gc
-                gc.collect()
-
-                # Longer delay between batches (15 seconds)
-                if batch_num < total_batches:
-                    print(f"⏳ Batch {batch_num} completed. Taking a 15-second break...")
-                    time.sleep(15)
-
-            # Update the failed emails file with any emails that still failed
-            if still_failed_emails:
-                write_failed_emails_to_file(still_failed_emails)
-                background_task_status['failed_emails'] = still_failed_emails
-            else:
-                # If all succeeded, delete the file
-                if os.path.exists('failed_emails.txt'):
-                    os.remove('failed_emails.txt')
-                    print("✅ All emails sent successfully! Removed failed_emails.txt")
-
-            # Final summary
-            print(f"\n🎉 Retry process completed!")
-            print(f"✅ {background_task_status['success_count']} emails sent successfully")
-            print(f"❌ {background_task_status['failed_count']} emails still failed")
-            if background_task_status['failed_count'] > 0:
-                print(f"📧 Still failed emails saved to failed_emails.txt: {len(still_failed_emails)} emails")
-
-        except Exception as e:
-            print(f"💥 Critical error in retry task: {e}")
-        finally:
-            background_task_status['running'] = False
-            background_task_status['current_employee'] = ''
-
-@app.route('/admin/create_failed_emails_file')
-@login_required
-def create_failed_emails_file():
-    """Create a failed_emails.txt file with the current failed emails for manual editing"""
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to perform this action.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    # You can paste your failed emails here or create the file manually
-    failed_emails = [
-        "ainamumtaz8@gmail.com",
-        "aishaarazii@gmail.com",
-        "farhananorzelan97@gmail.com",
-        "nadyrahanim@gmail.com",
-        "nurlailisalim97@gmail.com",
-        "phoehtoo16@gmail.com",
-        "kophyo198525@gmail.com",
-        "tamilarasu17795@yahoo.com",
-        "w4499133@gmail.com",
-        "vikramsaravanan1129@gmail.com",
-        "vishvanjohn@gmail.com",
-        "matheven3876@gmail.com",
-        "naylin19101995@gmail.com",
-        "phyu07184@gmail.com",
-        "gthar6115@gmail.com",
-        "yewcc-wg23@student.tarc.edu.my",
-        "yezaw5686@gmail.com",
-        "sunilyonjan802@gmail.com",
-        "zarniaung9550@gmail.com",
-        "ko603830@gmail.com"
-    ]
-    
-    write_failed_emails_to_file(failed_emails)
-    flash(f'Created failed_emails.txt with {len(failed_emails)} email addresses. You can now edit this file and use the retry function.', 'success')
-    return redirect(url_for('dashboard'))
-
-@app.route('/admin/clear_failed_emails')
-@login_required
-def clear_failed_emails():
-    """Clear the failed emails list"""
-    if current_user.user_type != 'admin':
-        flash('You do not have permission to perform this action.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    global background_task_status
-    failed_count = len(background_task_status.get('failed_emails', []))
-    background_task_status['failed_emails'] = []
-    
-    flash(f'Cleared {failed_count} failed emails from the list.', 'info')
-    return redirect(url_for('dashboard'))
-
-# END OF BULK EMAILS ===================================================================
 
 @app.route('/reset_admin_password')
 def reset_admin_password():
