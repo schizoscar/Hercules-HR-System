@@ -3562,7 +3562,6 @@ def remove_repurchase_item(item_id):
 @app.route('/submit_repurchase_order', methods=['POST'])
 @login_required
 def submit_repurchase_order():
-    """Submit the repurchase order - moves it from current to history"""
     try:
         # Get the pending order
         pending_order = RepurchaseOrder.query.filter_by(
@@ -3574,10 +3573,9 @@ def submit_repurchase_order():
             flash('No items in your order to submit.', 'warning')
             return redirect(url_for('repurchase'))
         
-        # Update order status and timestamp
+        # Update order status and timestamp (order moves to recent orders)
         pending_order.order_date = datetime.utcnow()
         pending_order.remarks = request.form.get('final_remarks', '')
-        # Status remains 'submitted' until admin action
         
         db.session.commit()
         flash('Order submitted successfully! Admin will review your request. You can now create a new order.', 'success')
@@ -3673,6 +3671,78 @@ def update_order_status(order_id, status):
         flash(f'Error updating order status: {str(e)}', 'danger')
     
     return redirect(url_for('admin_repurchase_order_detail', order_id=order_id))
+
+@app.route('/admin/export_repurchase_orders')
+@login_required
+def export_repurchase_orders():
+    """Export repurchase orders to CSV"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to export orders.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # Get filter parameters (same as admin_repurchase_orders)
+        status_filter = request.args.get('status', '')
+        employee_id = request.args.get('employee_id', '')
+        date_from = request.args.get('date_from', '')
+        date_to = request.args.get('date_to', '')
+        
+        # Build query (same as admin_repurchase_orders)
+        query = RepurchaseOrder.query
+        
+        if status_filter:
+            query = query.filter(RepurchaseOrder.status == status_filter)
+        
+        if employee_id:
+            query = query.filter(RepurchaseOrder.employee_id == employee_id)
+        
+        if date_from:
+            try:
+                date_from_obj = datetime.strptime(date_from, '%Y-%m-%d')
+                query = query.filter(RepurchaseOrder.order_date >= date_from_obj)
+            except ValueError:
+                pass
+        
+        if date_to:
+            try:
+                date_to_obj = datetime.strptime(date_to, '%Y-%m-%d')
+                query = query.filter(RepurchaseOrder.order_date <= date_to_obj)
+            except ValueError:
+                pass
+        
+        orders = query.order_by(RepurchaseOrder.order_date.desc()).all()
+        
+        # Create CSV content
+        csv_content = "Order ID,Order Date,Employee Name,Employee ID,Status,Total Items,Remarks,Items Details\n"
+        
+        for order in orders:
+            # Format items details
+            items_details = []
+            for item in order.items:
+                items_details.append(f"{item.item.name} (Qty: {item.quantity})")
+            
+            items_str = "; ".join(items_details)
+            
+            csv_content += f'"{order.id}",'
+            csv_content += f'"{order.order_date.strftime("%d-%m-%Y %H:%M")}",'
+            csv_content += f'"{order.employee.full_name}",'
+            csv_content += f'"{order.employee.employee_id}",'
+            csv_content += f'"{order.status}",'
+            csv_content += f'"{order.total_items}",'
+            csv_content += f'"{order.remarks or "N/A"}",'
+            csv_content += f'"{items_str}"\n'
+        
+        # Create response
+        response = make_response(csv_content)
+        filename = f"repurchase_orders_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+        response.headers['Content-type'] = 'text/csv'
+        
+        return response
+        
+    except Exception as e:
+        flash(f'Error exporting orders: {str(e)}', 'danger')
+        return redirect(url_for('admin_repurchase_orders'))
 
 @app.route('/admin/migrate_repurchase_tables')
 @login_required

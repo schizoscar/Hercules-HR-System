@@ -110,7 +110,7 @@
     <div class="glass">
         <h3 style="margin-bottom: 20px;">Recent Orders</h3>
         
-        {% if current_user.repurchase_orders|rejectattr('status', 'equalto', 'submitted')|list %}
+        {% if current_user.repurchase_orders|rejectattr('status', 'equalto', 'submitted')|list or current_user.repurchase_orders|selectattr('status', 'equalto', 'submitted')|list %}
         <div style="overflow-x: auto;">
             <table>
                 <thead>
@@ -119,11 +119,12 @@
                         <th>Items</th>
                         <th>Status</th>
                         <th>Remarks</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for order in current_user.repurchase_orders|sort(attribute='order_date', reverse=true) %}
-                    {% if order.status != 'submitted' %}
+                    {% if order.status != 'submitted' or order.status == 'submitted' %}
                     <tr>
                         <td>{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</td>
                         <td>{{ order.total_items }} items</td>
@@ -133,6 +134,28 @@
                             </span>
                         </td>
                         <td>{{ order.remarks or '-' }}</td>
+                        <td>
+                            {% if order.status == 'submitted' %}
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <a href="{{ url_for('edit_repurchase_order', order_id=order.id) }}" 
+                                   class="btn btn-sm btn-primary" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;">
+                                    <span>✏️</span>
+                                    <span>Edit</span>
+                                </a>
+                                <form action="{{ url_for('delete_repurchase_order', order_id=order.id) }}" method="POST" style="margin: 0;">
+                                    <button type="submit" 
+                                            class="btn btn-sm btn-danger" 
+                                            style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                            onclick="return confirm('Delete this order?')">
+                                        <span>🗑️</span>
+                                        <span>Delete</span>
+                                    </button>
+                                </form>
+                            </div>
+                            {% else %}
+                            <span style="color: #999;">-</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endif %}
                     {% endfor %}
