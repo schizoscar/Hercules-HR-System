@@ -1,7 +1,7 @@
 import requests
 from flask import Flask, render_template, redirect, url_for, flash, request, make_response, send_from_directory, Blueprint, send_file, session, jsonify, cli, copy_current_request_context
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, text
 from sqlalchemy.orm import aliased
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
@@ -47,6 +47,24 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'hr.db')
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# --- DATABASE POOL CONFIGURATION FOR RENDER FREE TIER ---
+if os.environ.get('DATABASE_URL'):  # Only apply to PostgreSQL on Render
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_recycle': 300,  # Recycle connections every 5 minutes
+        'pool_pre_ping': True,  # Test connections before using them
+        'pool_size': 5,
+        'max_overflow': 10,
+    }
+    # Additional connection timeout settings
+    app.config['SQLALCHEMY_POOL_RECYCLE'] = 300
+    app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
+else:
+    # SQLite doesn't need connection pooling
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,  # Still enable pre-ping for SQLite
+    }
+
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = "None"
 app.config['REMEMBER_COOKIE_SECURE'] = True
@@ -1473,23 +1491,30 @@ def add_time_tracking_columns():
     except Exception as e:
         print(f"Error checking/adding time tracking columns: {e}")
 
-def refresh_db_connection():
-    """Refresh database connection to handle Render free tier sleep cycles"""
+def test_db_connection():
+    """Test if database connection is alive without breaking sessions"""
     try:
-        # Test connection
         db.session.execute(text("SELECT 1"))
         return True
     except Exception as e:
-        print(f"Database connection stale, refreshing: {e}")
+        print(f"Database connection test failed: {e}")
+        return False
+
+def safe_db_query(query_func, max_retries=2):
+    """Execute database query with safe retry logic"""
+    for attempt in range(max_retries + 1):
         try:
-            db.session.remove()
-            db.session.close_all()
-            # Recreate engine connection
-            db.engine.dispose()
-            return True
-        except Exception as refresh_error:
-            print(f"Failed to refresh database connection: {refresh_error}")
-            return False
+            return query_func()
+        except Exception as e:
+            if "detached instance" in str(e).lower() or "connection" in str(e).lower():
+                if attempt < max_retries:
+                    print(f"Database error, retrying... (attempt {attempt + 1})")
+                    db.session.rollback()
+                    # Refresh the current user object
+                    db.session.refresh(current_user._get_current_object())
+                    continue
+            # Re-raise if not a connection issue or out of retries
+            raise e
 
 @app.route('/leave_balance_history')
 @login_required
@@ -3368,26 +3393,22 @@ def health_check():
 @login_required
 def repurchase():
     """Main repurchase page for all users"""
-    # Check and refresh database connection
-    if not refresh_db_connection():
-        flash('Database connection issue. Please try again.', 'danger')
-        return redirect(url_for('dashboard'))
-    
     try:
-        # Get categories for dropdown - use fresh query
+        # Get categories for dropdown - use fresh query with eager loading
         categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
         
-        # Debug logging
-        print(f"Found {len(categories)} categories")
-        for cat in categories:
-            items_count = RepurchaseItem.query.filter_by(category_id=cat.id, is_active=True).count()
-            print(f"Category {cat.name} has {items_count} items")
-        
-        # Get user's current pending order
+        # Get user's current pending order with explicit query (don't use relationship)
         pending_order = RepurchaseOrder.query.filter_by(
             employee_id=current_user.id, 
             status='submitted'
         ).first()
+        
+        # Get user's submitted orders with explicit query (don't use current_user.repurchase_orders)
+        user_orders = RepurchaseOrder.query.filter_by(
+            employee_id=current_user.id
+        ).filter(
+            RepurchaseOrder.status != 'submitted'
+        ).order_by(RepurchaseOrder.order_date.desc()).all()
         
         form = RepurchaseOrderForm()
         form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
@@ -3396,7 +3417,8 @@ def repurchase():
         return render_template('repurchase.html', 
                              form=form,
                              categories=categories,
-                             pending_order=pending_order)
+                             pending_order=pending_order,
+                             user_orders=user_orders)  # Pass explicit query result
                              
     except Exception as e:
         db.session.rollback()
@@ -3481,14 +3503,14 @@ def delete_repurchase_order(order_id):
 def get_category_items(category_id):
     """Get items for a specific category (AJAX endpoint)"""
     try:
-        # Refresh session for AJAX calls too
-        db.session.remove()
+        # Use safe query approach
+        def get_items():
+            return RepurchaseItem.query.filter_by(
+                category_id=category_id, 
+                is_active=True
+            ).order_by(RepurchaseItem.name).all()
         
-        items = RepurchaseItem.query.filter_by(
-            category_id=category_id, 
-            is_active=True
-        ).order_by(RepurchaseItem.name).all()
-        
+        items = safe_db_query(get_items)
         items_data = [{'id': item.id, 'name': item.name} for item in items]
         return jsonify(items_data)
         

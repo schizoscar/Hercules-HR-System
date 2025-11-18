@@ -109,8 +109,8 @@
     <!-- Submitted Orders Section -->
     <div class="glass">
         <h3 style="margin-bottom: 20px;">Recent Orders</h3>
-        
-        {% if current_user.repurchase_orders|rejectattr('status', 'equalto', 'submitted')|list or current_user.repurchase_orders|selectattr('status', 'equalto', 'submitted')|list %}
+    
+        {% if user_orders %}
         <div style="overflow-x: auto;">
             <table>
                 <thead>
@@ -123,8 +123,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for order in current_user.repurchase_orders|sort(attribute='order_date', reverse=true) %}
-                    {% if order.status != 'submitted' or order.status == 'submitted' %}
+                    {% for order in user_orders %}
                     <tr>
                         <td>{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</td>
                         <td>{{ order.total_items }} items</td>
@@ -157,7 +156,6 @@
                             {% endif %}
                         </td>
                     </tr>
-                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
