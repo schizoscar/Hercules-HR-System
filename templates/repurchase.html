@@ -64,7 +64,7 @@
             </form>
         </div>
 
-        <div style="overflow-x: auto;">
+        <div class="table-container">
             <table>
                 <thead>
                     <tr>
@@ -111,7 +111,7 @@
         <h3 style="margin-bottom: 20px;">Recent Orders</h3>
     
         {% if user_orders %}
-        <div style="overflow-x: auto;">
+        <div class="table-container">
             <table>
                 <thead>
                     <tr>
@@ -129,7 +129,7 @@
                         <td>{{ order.total_items }} items</td>
                         <td>
                             <span class="status-badge status-{{ order.status }}">
-                                {{ order.status|title }}
+                                {{ order.status.replace('_', ' ')|title }}
                             </span>
                         </td>
                         <td>{{ order.remarks or '-' }}</td>
@@ -190,6 +190,44 @@
         border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
+    /* Table container for horizontal scrolling */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        border-radius: 8px;
+        margin-top: 20px;
+    }
+
+    .table-container::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .table-container::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+    }
+
+    .table-container::-webkit-scrollbar-thumb {
+        background: rgba(67, 97, 238, 0.5);
+        border-radius: 4px;
+    }
+
+    .table-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(67, 97, 238, 0.7);
+    }
+
+    .dark-theme .table-container::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .dark-theme .table-container::-webkit-scrollbar-thumb {
+        background: rgba(76, 201, 240, 0.5);
+    }
+
+    .dark-theme .table-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(76, 201, 240, 0.7);
+    }
+
     .btn {
         display: inline-flex;
         align-items: center;
@@ -230,7 +268,7 @@
     table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 20px;
+        min-width: 600px; /* Minimum width to ensure horizontal scroll */
     }
     
     th {
@@ -240,12 +278,14 @@
         border-bottom: 2px solid #ddd;
         font-weight: 600;
         color: #333;
+        white-space: nowrap; /* Prevent header text wrapping */
     }
     
     td {
         padding: 12px;
         border-bottom: 1px solid #eee;
         color: #666;
+        white-space: nowrap; /* Prevent cell text wrapping */
     }
 
     .dark-theme th,
@@ -267,31 +307,37 @@
         font-size: 0.8rem;
         font-weight: 600;
         text-transform: uppercase;
+        border: 1px solid transparent;
     }
 
     .status-pending_review {
         background: rgba(255, 193, 7, 0.2);
         color: #ffc107;
+        border-color: #ffc107;
     }
     
     .status-submitted {
         background: rgba(255, 193, 7, 0.2);
         color: #ffc107;
+        border-color: #ffc107;
     }
     
     .status-approved {
         background: rgba(40, 167, 69, 0.2);
         color: #28a745;
+        border-color: #28a745;
     }
     
     .status-rejected {
         background: rgba(220, 53, 69, 0.2);
         color: #dc3545;
+        border-color: #dc3545;
     }
     
     .status-completed {
         background: rgba(23, 162, 184, 0.2);
         color: #17a2b8;
+        border-color: #17a2b8;
     }
 
     .form-select,
@@ -339,6 +385,7 @@
         
         table {
             font-size: 0.9rem;
+            min-width: 500px; /* Smaller minimum width for mobile */
         }
         
         th, td {
@@ -353,22 +400,76 @@
         #repurchase-form div {
             grid-template-columns: 1fr !important;
         }
+
+        /* Scroll indicator for mobile */
+        .table-container {
+            position: relative;
+        }
+
+        .table-container::after {
+            content: '← Scroll →';
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            transform: translateY(-50%);
+            background: rgba(67, 97, 238, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            pointer-events: none;
+            opacity: 0.8;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 0.9; }
+        }
     }
     
     @media (max-width: 480px) {
-        td:nth-child(2), th:nth-child(2),
-        td:nth-child(4), th:nth-child(4) {
-            display: none;
+        table {
+            min-width: 450px; /* Even smaller for very small screens */
+        }
+        
+        th, td {
+            padding: 6px 8px;
+        }
+        
+        .btn-sm span:last-child {
+            display: none; /* Hide button text on very small screens */
+        }
+        
+        .btn-sm {
+            padding: 6px;
+            min-width: 36px;
+            justify-content: center;
+        }
+
+        .status-badge {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+        }
+    }
+
+    /* For very small screens, show scroll hint */
+    @media (max-width: 380px) {
+        .table-container::after {
+            content: 'Scroll →';
+            font-size: 0.6rem;
+            padding: 3px 6px;
         }
     }
 </style>
 
 <script>
     // AJAX for category-item dependency
-    document.getElementById('category_id').addEventListener('change', function() {
+    document.getElementById('category_id').addEventListener('change', function () {
         const categoryId = this.value;
         const itemSelect = document.getElementById('item_id');
-        
+
         if (categoryId) {
             fetch(`/get_category_items/${categoryId}`)
                 .then(response => response.json())
@@ -385,6 +486,22 @@
         } else {
             itemSelect.innerHTML = '<option value="0">Select Category First</option>';
         }
+    });
+
+    // Add touch scrolling enhancement for mobile
+    document.addEventListener('DOMContentLoaded', function () {
+        const tableContainers = document.querySelectorAll('.table-container');
+
+        tableContainers.forEach(container => {
+            // Add horizontal scroll with momentum on touch devices
+            container.addEventListener('touchstart', function () {
+                this.style.cursor = 'grabbing';
+            });
+
+            container.addEventListener('touchend', function () {
+                this.style.cursor = 'grab';
+            });
+        });
     });
 </script>
 {% endblock %}
