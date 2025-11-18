@@ -3462,6 +3462,34 @@ def edit_repurchase_order(order_id):
                          order=order,
                          categories=categories)
 
+@app.route('/admin/delete_repurchase_order/<int:order_id>', methods=['POST'])
+@login_required
+def admin_delete_repurchase_order(order_id):
+    """Admin delete repurchase order"""
+    if current_user.user_type != 'admin':
+        flash('You do not have permission to delete orders.', 'danger')
+        return redirect(url_for('admin_repurchase_orders'))
+    
+    try:
+        order = RepurchaseOrder.query.get_or_404(order_id)
+        employee_name = order.employee.full_name
+        order_date = order.order_date.strftime('%d-%m-%Y')
+        
+        # Delete all order items first
+        RepurchaseOrderItem.query.filter_by(order_id=order.id).delete()
+        
+        # Then delete the order
+        db.session.delete(order)
+        db.session.commit()
+        
+        flash(f'Order from {employee_name} ({order_date}) has been deleted successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting order: {str(e)}', 'danger')
+    
+    return redirect(url_for('admin_repurchase_orders'))
+
 @app.route('/delete_repurchase_order/<int:order_id>', methods=['POST'])
 @login_required
 def delete_repurchase_order(order_id):
