@@ -65,7 +65,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
             <h3 style="margin: 0;">
                 {% if status_filter %}
-                    {{ status_filter|title }} Orders
+                    {{ status_filter.replace('_', ' ')|title }} Orders
                 {% else %}
                     All Orders
                 {% endif %}
@@ -96,19 +96,21 @@
                         <td>{{ order.total_items }} items</td>
                         <td>
                             <span class="status-badge status-{{ order.status }}">
-                                {{ order.status|title }}
+                                {{ order.status.replace('_', ' ')|title }}
                             </span>
                         </td>
                         <td>{{ order.remarks or '-' }}</td>
                         <td>
                             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <!-- View Button -->
                                 <a href="{{ url_for('admin_repurchase_order_detail', order_id=order.id) }}" 
                                    class="btn btn-sm btn-primary" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;">
                                     <span>👁️</span>
                                     <span>View</span>
                                 </a>
                                 
-                                {% if order.status == 'submitted' %}
+                                <!-- Status Action Buttons -->
+                                {% if order.status == 'pending_review' %}
                                 <a href="{{ url_for('update_order_status', order_id=order.id, status='approved') }}" 
                                    class="btn btn-sm btn-success" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
                                    onclick="return confirm('Approve this order?')">
@@ -129,6 +131,17 @@
                                     <span>Complete</span>
                                 </a>
                                 {% endif %}
+                                
+                                <!-- Delete Button -->
+                                <form action="{{ url_for('admin_delete_repurchase_order', order_id=order.id) }}" method="POST" style="margin: 0; display: inline;">
+                                    <button type="submit" 
+                                            class="btn btn-sm btn-warning" 
+                                            style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                            onclick="return confirm('Are you sure you want to delete this order? This action cannot be undone.')">
+                                        <span>🗑️</span>
+                                        <span>Delete</span>
+                                    </button>
+                                </form>
                             </div>
                         </td>
                     </tr>
@@ -146,7 +159,6 @@
 </div>
 
 <style>
-    /* Reuse the same styles from the previous template */
     .dashboard-container {
         width: 100%;
         padding: 20px;
@@ -203,6 +215,15 @@
         background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
     }
     
+    .btn-warning {
+        background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+        color: #000;
+    }
+    
+    .btn-warning:hover {
+        background: linear-gradient(135deg, #e0a800 0%, #d39e00 100%);
+    }
+    
     .btn-sm {
         padding: 6px 12px;
         font-size: 0.9rem;
@@ -249,26 +270,37 @@
         font-size: 0.8rem;
         font-weight: 600;
         text-transform: uppercase;
+        border: 1px solid transparent;
+    }
+    
+    .status-pending_review {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+        border-color: #ffc107;
     }
     
     .status-submitted {
         background: rgba(255, 193, 7, 0.2);
         color: #ffc107;
+        border-color: #ffc107;
     }
     
     .status-approved {
         background: rgba(40, 167, 69, 0.2);
         color: #28a745;
+        border-color: #28a745;
     }
     
     .status-rejected {
         background: rgba(220, 53, 69, 0.2);
         color: #dc3545;
+        border-color: #dc3545;
     }
     
     .status-completed {
         background: rgba(23, 162, 184, 0.2);
         color: #17a2b8;
+        border-color: #17a2b8;
     }
 
     select,
@@ -339,6 +371,16 @@
         td:nth-child(2), th:nth-child(2),
         td:nth-child(5), th:nth-child(5) {
             display: none;
+        }
+        
+        .btn-sm span:last-child {
+            display: none;
+        }
+        
+        .btn-sm {
+            padding: 8px;
+            min-width: 40px;
+            justify-content: center;
         }
     }
 </style>
