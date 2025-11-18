@@ -3431,9 +3431,17 @@ def edit_repurchase_order(order_id):
         flash('You can only edit your own orders.', 'danger')
         return redirect(url_for('repurchase'))
     
-    if order.status != 'pending_review':  # Changed from 'submitted'
+    if order.status != 'pending_review':
         flash('Only orders pending review can be edited.', 'danger')
         return redirect(url_for('repurchase'))
+    
+    # Create the form for adding new items
+    form = RepurchaseOrderForm()
+    
+    # Populate category choices
+    categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
+    form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
+    form.item_id.choices = [(0, 'Select Category First')]
     
     if request.method == 'POST':
         try:
@@ -3457,10 +3465,10 @@ def edit_repurchase_order(order_id):
             db.session.rollback()
             flash(f'Error updating order: {str(e)}', 'danger')
     
-    categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
     return render_template('edit_repurchase_order.html', 
                          order=order,
-                         categories=categories)
+                         categories=categories,
+                         form=form)  
 
 @app.route('/admin/delete_repurchase_order/<int:order_id>', methods=['POST'])
 @login_required
