@@ -1473,6 +1473,24 @@ def add_time_tracking_columns():
     except Exception as e:
         print(f"Error checking/adding time tracking columns: {e}")
 
+def refresh_db_connection():
+    """Refresh database connection to handle Render free tier sleep cycles"""
+    try:
+        # Test connection
+        db.session.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        print(f"Database connection stale, refreshing: {e}")
+        try:
+            db.session.remove()
+            db.session.close_all()
+            # Recreate engine connection
+            db.engine.dispose()
+            return True
+        except Exception as refresh_error:
+            print(f"Failed to refresh database connection: {refresh_error}")
+            return False
+
 @app.route('/leave_balance_history')
 @login_required
 def leave_balance_history():
@@ -3328,27 +3346,62 @@ Hercules IT Department
 
 
 #======================================= orders + data migration ========================================
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Render"""
+    try:
+        # Test database connection
+        db.session.execute(text("SELECT 1"))
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy', 
+            'database': 'disconnected',
+            'error': str(e)
+        }), 500
+
 @app.route('/repurchase')
 @login_required
 def repurchase():
     """Main repurchase page for all users"""
-    # Get categories for dropdown
-    categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
+    # Check and refresh database connection
+    if not refresh_db_connection():
+        flash('Database connection issue. Please try again.', 'danger')
+        return redirect(url_for('dashboard'))
     
-    # Get user's current pending order (only orders with 'submitted' status are current)
-    pending_order = RepurchaseOrder.query.filter_by(
-        employee_id=current_user.id, 
-        status='submitted'
-    ).first()
-    
-    form = RepurchaseOrderForm()
-    form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
-    form.item_id.choices = [(0, 'Select Category First')]
-    
-    return render_template('repurchase.html', 
-                         form=form,
-                         categories=categories,
-                         pending_order=pending_order)
+    try:
+        # Get categories for dropdown - use fresh query
+        categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
+        
+        # Debug logging
+        print(f"Found {len(categories)} categories")
+        for cat in categories:
+            items_count = RepurchaseItem.query.filter_by(category_id=cat.id, is_active=True).count()
+            print(f"Category {cat.name} has {items_count} items")
+        
+        # Get user's current pending order
+        pending_order = RepurchaseOrder.query.filter_by(
+            employee_id=current_user.id, 
+            status='submitted'
+        ).first()
+        
+        form = RepurchaseOrderForm()
+        form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
+        form.item_id.choices = [(0, 'Select Category First')]
+        
+        return render_template('repurchase.html', 
+                             form=form,
+                             categories=categories,
+                             pending_order=pending_order)
+                             
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error loading repurchase page: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
 
 @app.route('/edit_repurchase_order/<int:order_id>', methods=['GET', 'POST'])
 @login_required
@@ -3427,16 +3480,21 @@ def delete_repurchase_order(order_id):
 @login_required
 def get_category_items(category_id):
     """Get items for a specific category (AJAX endpoint)"""
-    if current_user.user_type != 'factory':
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    items = RepurchaseItem.query.filter_by(
-        category_id=category_id, 
-        is_active=True
-    ).order_by(RepurchaseItem.name).all()
-    
-    items_data = [{'id': item.id, 'name': item.name} for item in items]
-    return jsonify(items_data)
+    try:
+        # Refresh session for AJAX calls too
+        db.session.remove()
+        
+        items = RepurchaseItem.query.filter_by(
+            category_id=category_id, 
+            is_active=True
+        ).order_by(RepurchaseItem.name).all()
+        
+        items_data = [{'id': item.id, 'name': item.name} for item in items]
+        return jsonify(items_data)
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Database connection issue. Please refresh the page.'}), 500
 
 @app.route('/add_repurchase_item', methods=['POST'])
 @login_required
