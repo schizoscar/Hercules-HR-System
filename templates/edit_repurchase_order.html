@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Repurchase Order{% endblock %}
+
+{% block header %}Edit Repurchase Order{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <div class="glass">
+        <h2 style="margin-bottom: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; background-clip: text; color: transparent;">
+            Edit Repurchase Order
+        </h2>
+        <p style="color: #666; margin-bottom: 25px;">Modify your order items and remarks below.</p>
+    </div>
+
+    <!-- Edit Order Form -->
+    <div class="glass">
+        <form method="POST" action="{{ url_for('edit_repurchase_order', order_id=order.id) }}">
+            <div style="margin-bottom: 25px;">
+                <label for="remarks" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Order Remarks (Optional)</label>
+                <textarea name="remarks" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; background: rgba(255, 255, 255, 0.9); min-height: 80px; resize: vertical;"
+                          placeholder="Any additional notes for your order...">{{ order.remarks or '' }}</textarea>
+            </div>
+
+            <h3 style="margin-bottom: 20px; color: #333;">Order Items</h3>
+            
+            {% if order.items %}
+            <div class="table-scroll-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Category</th>
+                            <th>Quantity</th>
+                            <th>Current Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in order.items %}
+                        <tr>
+                            <td>{{ item.item.name }}</td>
+                            <td>{{ item.item.category.name }}</td>
+                            <td>
+                                <input type="number" 
+                                       name="quantity_{{ item.id }}" 
+                                       value="{{ item.quantity }}" 
+                                       min="1" 
+                                       style="width: 80px; padding: 8px; border-radius: 6px; border: 1px solid #ddd; text-align: center;"
+                                       onchange="updateTotalItems()">
+                            </td>
+                            <td>{{ item.remarks or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 15px; background: rgba(67, 97, 238, 0.1); border-radius: 8px;">
+                <p style="margin: 0; font-weight: 600; color: #333;">
+                    Total Items: <span id="total-items">{{ order.total_items }}</span>
+                </p>
+            </div>
+            {% else %}
+            <div class="no-items" style="text-align: center; padding: 40px;">
+                <p style="font-size: 1.1rem; color: #666; margin-bottom: 10px;">No items in this order</p>
+                <p style="color: #999;">Add items from the main repurchase page</p>
+            </div>
+            {% endif %}
+
+            <div style="display: flex; gap: 15px; margin-top: 25px; flex-wrap: wrap;">
+                <button type="submit" class="btn btn-success" style="display: inline-flex; align-items: center; gap: 8px;">
+                    <span>💾</span>
+                    <span>Save Changes</span>
+                </button>
+                <a href="{{ url_for('repurchase') }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">
+                    <span>←</span>
+                    <span>Cancel</span>
+                </a>
+                <a href="{{ url_for('repurchase') }}" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
+                    <span>➕</span>
+                    <span>Add More Items</span>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Order Summary -->
+    <div class="glass">
+        <h3 style="margin-bottom: 15px; color: #333;">Order Summary</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div style="padding: 15px; background: rgba(67, 97, 238, 0.05); border-radius: 8px;">
+                <p style="margin: 0; font-size: 0.9rem; color: #666;">Order Date</p>
+                <p style="margin: 5px 0 0 0; font-weight: 600; color: #333;">{{ order.order_date.strftime('%d-%m-%Y %H:%M') }}</p>
+            </div>
+            <div style="padding: 15px; background: rgba(67, 97, 238, 0.05); border-radius: 8px;">
+                <p style="margin: 0; font-size: 0.9rem; color: #666;">Current Status</p>
+                <p style="margin: 5px 0 0 0; font-weight: 600; color: #333;">
+                    <span class="status-badge status-{{ order.status }}">
+                        {{ order.status.replace('_', ' ')|title }}
+                    </span>
+                </p>
+            </div>
+            <div style="padding: 15px; background: rgba(67, 97, 238, 0.05); border-radius: 8px;">
+                <p style="margin: 0; font-size: 0.9rem; color: #666;">Total Items</p>
+                <p style="margin: 5px 0 0 0; font-weight: 600; color: #333;">{{ order.total_items }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .dashboard-container {
+        width: 100%;
+        padding: 20px;
+    }
+    
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+
+    .dark-theme .glass {
+        background: var(--dark-container);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .table-scroll-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        margin-top: 20px;
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    .dark-theme .table-scroll-container {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(37, 42, 64, 0.3);
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: none;
+        cursor: pointer;
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .btn-secondary {
+        background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 500px;
+    }
+    
+    th {
+        background: rgba(67, 97, 238, 0.1);
+        padding: 12px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: 600;
+        color: #333;
+        white-space: nowrap;
+    }
+    
+    td {
+        padding: 12px;
+        border-bottom: 1px solid #eee;
+        color: #666;
+        white-space: nowrap;
+    }
+
+    .dark-theme th,
+    .dark-theme td {
+        color: #e4e8f0;
+    }
+    
+    tr:hover {
+        background: rgba(67, 97, 238, 0.05);
+    }
+
+    .dark-theme tr:hover {
+        background: rgba(76, 201, 240, 0.1);
+    }
+    
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        border: 1px solid transparent;
+    }
+
+    .status-pending_review {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+        border-color: #ffc107;
+    }
+
+    input[type="number"] {
+        transition: all 0.3s ease;
+        border: 1px solid #ddd;
+    }
+
+    input[type="number"]:focus {
+        outline: none;
+        border-color: #4361ee;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    .dark-theme input[type="number"] {
+        background: rgba(37, 42, 64, 0.8);
+        border-color: rgba(255, 255, 255, 0.1);
+        color: #e4e8f0;
+    }
+
+    .dark-theme input[type="number"]:focus {
+        border-color: #4361ee;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+    }
+
+    textarea {
+        transition: all 0.3s ease;
+        border: 1px solid #ddd;
+        font-family: inherit;
+    }
+
+    textarea:focus {
+        outline: none;
+        border-color: #4361ee;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    .dark-theme textarea {
+        background: rgba(37, 42, 64, 0.8);
+        border-color: rgba(255, 255, 255, 0.1);
+        color: #e4e8f0;
+    }
+
+    .dark-theme textarea:focus {
+        border-color: #4361ee;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
+    }
+
+    .no-items {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 10px;
+        }
+        
+        .glass {
+            padding: 15px;
+        }
+        
+        table {
+            font-size: 0.9rem;
+            min-width: 450px;
+        }
+        
+        th, td {
+            padding: 10px;
+        }
+
+        .btn {
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+
+        .table-scroll-container:before {
+            content: 'Scroll horizontally →';
+            position: absolute;
+            top: -25px;
+            right: 0;
+            background: rgba(67, 97, 238, 0.9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            z-index: 10;
+            animation: fadeInOut 3s infinite;
+        }
+
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+    }
+    
+    @media (max-width: 480px) {
+        table {
+            min-width: 400px;
+        }
+        
+        th, td {
+            padding: 8px 10px;
+        }
+
+        input[type="number"] {
+            width: 60px;
+            padding: 6px;
+        }
+
+        .btn span:last-child {
+            display: none;
+        }
+        
+        .btn {
+            padding: 8px;
+            min-width: 40px;
+            justify-content: center;
+        }
+    }
+
+    @media (min-width: 769px) {
+        .table-scroll-container:before {
+            display: none;
+        }
+    }
+</style>
+
+<script>
+    function updateTotalItems() {
+        let total = 0;
+        const quantityInputs = document.querySelectorAll('input[type="number"][name^="quantity_"]');
+        
+        quantityInputs.forEach(input => {
+            total += parseInt(input.value) || 0;
+        });
+        
+        document.getElementById('total-items').textContent = total;
+    }
+
+    // Initialize total items on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        updateTotalItems();
+    });
+</script>
+{% endblock %}

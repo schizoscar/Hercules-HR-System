@@ -64,7 +64,7 @@
             </form>
         </div>
 
-        <div class="table-container">
+        <div class="table-scroll-container">
             <table>
                 <thead>
                     <tr>
@@ -87,7 +87,7 @@
                                 <button type="submit" class="btn btn-sm btn-danger" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
                                         onclick="return confirm('Remove {{ item.item.name }} from your order?')">
                                     <span>🗑️</span>
-                                    <span>Remove</span>
+                                    <span class="action-text">Remove</span>
                                 </button>
                             </form>
                         </td>
@@ -111,7 +111,7 @@
         <h3 style="margin-bottom: 20px;">Recent Orders</h3>
     
         {% if user_orders %}
-        <div class="table-container">
+        <div class="table-scroll-container">
             <table>
                 <thead>
                     <tr>
@@ -139,7 +139,7 @@
                                 <a href="{{ url_for('edit_repurchase_order', order_id=order.id) }}" 
                                    class="btn btn-sm btn-primary" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;">
                                     <span>✏️</span>
-                                    <span>Edit</span>
+                                    <span class="action-text">Edit</span>
                                 </a>
                                 <form action="{{ url_for('delete_repurchase_order', order_id=order.id) }}" method="POST" style="margin: 0;">
                                     <button type="submit" 
@@ -147,7 +147,7 @@
                                             style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
                                             onclick="return confirm('Delete this order?')">
                                         <span>🗑️</span>
-                                        <span>Delete</span>
+                                        <span class="action-text">Delete</span>
                                     </button>
                                 </form>
                             </div>
@@ -190,42 +190,19 @@
         border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    /* Table container for horizontal scrolling */
-    .table-container {
+    /* Proper table scrolling container */
+    .table-scroll-container {
         overflow-x: auto;
-        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid rgba(0, 0, 0, 0.1);
         border-radius: 8px;
         margin-top: 20px;
+        background: rgba(255, 255, 255, 0.5);
     }
 
-    .table-container::-webkit-scrollbar {
-        height: 8px;
-    }
-
-    .table-container::-webkit-scrollbar-track {
-        background: rgba(0, 0, 0, 0.1);
-        border-radius: 4px;
-    }
-
-    .table-container::-webkit-scrollbar-thumb {
-        background: rgba(67, 97, 238, 0.5);
-        border-radius: 4px;
-    }
-
-    .table-container::-webkit-scrollbar-thumb:hover {
-        background: rgba(67, 97, 238, 0.7);
-    }
-
-    .dark-theme .table-container::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.1);
-    }
-
-    .dark-theme .table-container::-webkit-scrollbar-thumb {
-        background: rgba(76, 201, 240, 0.5);
-    }
-
-    .dark-theme .table-container::-webkit-scrollbar-thumb:hover {
-        background: rgba(76, 201, 240, 0.7);
+    .dark-theme .table-scroll-container {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(37, 42, 64, 0.3);
     }
 
     .btn {
@@ -268,7 +245,7 @@
     table {
         width: 100%;
         border-collapse: collapse;
-        min-width: 600px; /* Minimum width to ensure horizontal scroll */
+        min-width: 600px; /* Force horizontal scroll on mobile */
     }
     
     th {
@@ -278,14 +255,14 @@
         border-bottom: 2px solid #ddd;
         font-weight: 600;
         color: #333;
-        white-space: nowrap; /* Prevent header text wrapping */
+        white-space: nowrap;
     }
     
     td {
         padding: 12px;
         border-bottom: 1px solid #eee;
         color: #666;
-        white-space: nowrap; /* Prevent cell text wrapping */
+        white-space: nowrap;
     }
 
     .dark-theme th,
@@ -373,6 +350,11 @@
         color: #666;
     }
 
+    /* Action text for responsive buttons */
+    .action-text {
+        display: inline;
+    }
+
     /* Responsive design */
     @media (max-width: 768px) {
         .dashboard-container {
@@ -385,11 +367,11 @@
         
         table {
             font-size: 0.9rem;
-            min-width: 500px; /* Smaller minimum width for mobile */
+            min-width: 550px;
         }
         
         th, td {
-            padding: 8px;
+            padding: 10px;
         }
         
         .btn {
@@ -401,50 +383,48 @@
             grid-template-columns: 1fr !important;
         }
 
-        /* Scroll indicator for mobile */
-        .table-container {
+        /* Show scroll hint with better positioning */
+        .table-scroll-container {
             position: relative;
         }
 
-        .table-container::after {
-            content: '← Scroll →';
+        .table-scroll-container:before {
+            content: 'Scroll horizontally →';
             position: absolute;
-            top: 50%;
-            right: 10px;
-            transform: translateY(-50%);
-            background: rgba(67, 97, 238, 0.8);
+            top: -25px;
+            right: 0;
+            background: rgba(67, 97, 238, 0.9);
             color: white;
             padding: 4px 8px;
             border-radius: 12px;
             font-size: 0.7rem;
             font-weight: 600;
-            pointer-events: none;
-            opacity: 0.8;
-            animation: pulse 2s infinite;
+            z-index: 10;
+            animation: fadeInOut 3s infinite;
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 0.9; }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
         }
     }
     
     @media (max-width: 480px) {
         table {
-            min-width: 450px; /* Even smaller for very small screens */
+            min-width: 500px;
         }
         
         th, td {
-            padding: 6px 8px;
+            padding: 8px 10px;
         }
         
-        .btn-sm span:last-child {
-            display: none; /* Hide button text on very small screens */
+        .action-text {
+            display: none; /* Hide button text on mobile */
         }
         
         .btn-sm {
-            padding: 6px;
-            min-width: 36px;
+            padding: 6px 8px;
+            min-width: 40px;
             justify-content: center;
         }
 
@@ -452,14 +432,19 @@
             font-size: 0.7rem;
             padding: 4px 8px;
         }
+
+        /* Move scroll hint for very small screens */
+        .table-scroll-container:before {
+            top: -30px;
+            font-size: 0.65rem;
+            padding: 3px 6px;
+        }
     }
 
-    /* For very small screens, show scroll hint */
-    @media (max-width: 380px) {
-        .table-container::after {
-            content: 'Scroll →';
-            font-size: 0.6rem;
-            padding: 3px 6px;
+    /* Hide scroll hint on desktop */
+    @media (min-width: 769px) {
+        .table-scroll-container:before {
+            display: none;
         }
     }
 </style>
@@ -486,22 +471,6 @@
         } else {
             itemSelect.innerHTML = '<option value="0">Select Category First</option>';
         }
-    });
-
-    // Add touch scrolling enhancement for mobile
-    document.addEventListener('DOMContentLoaded', function () {
-        const tableContainers = document.querySelectorAll('.table-container');
-
-        tableContainers.forEach(container => {
-            // Add horizontal scroll with momentum on touch devices
-            container.addEventListener('touchstart', function () {
-                this.style.cursor = 'grabbing';
-            });
-
-            container.addEventListener('touchend', function () {
-                this.style.cursor = 'grab';
-            });
-        });
     });
 </script>
 {% endblock %}
