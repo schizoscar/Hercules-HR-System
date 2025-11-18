@@ -59,11 +59,6 @@ if os.environ.get('DATABASE_URL'):  # Only apply to PostgreSQL on Render
     # Additional connection timeout settings
     app.config['SQLALCHEMY_POOL_RECYCLE'] = 300
     app.config['SQLALCHEMY_POOL_TIMEOUT'] = 30
-else:
-    # SQLite doesn't need connection pooling
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,  # Still enable pre-ping for SQLite
-    }
 
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = "None"
