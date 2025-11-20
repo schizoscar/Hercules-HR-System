@@ -3489,8 +3489,37 @@ def add_to_existing_order(order_id):
     
     form = RepurchaseOrderForm()
     
-    if form.validate_on_submit():
+    # ALWAYS populate choices before validation - this is the key fix
+    categories = RepurchaseCategory.query.filter_by(is_active=True).order_by(RepurchaseCategory.name).all()
+    form.category_id.choices = [(0, 'Select Category')] + [(cat.id, cat.name) for cat in categories]
+    
+    # Get the selected category ID from the form data
+    selected_category_id = request.form.get('category_id')
+    if selected_category_id and selected_category_id != '0':
+        items = RepurchaseItem.query.filter_by(
+            category_id=selected_category_id, 
+            is_active=True
+        ).all()
+        form.item_id.choices = [(0, 'Select Item')] + [(item.id, item.name) for item in items]
+    else:
+        form.item_id.choices = [(0, 'Select Category First')]
+    
+    # Use manual validation instead of validate_on_submit to avoid choice issues
+    if form.is_submitted():
         try:
+            # Manual validation
+            if not form.category_id.data or form.category_id.data == 0:
+                flash('Please select a category.', 'danger')
+                return redirect(url_for('edit_repurchase_order', order_id=order_id))
+            
+            if not form.item_id.data or form.item_id.data == 0:
+                flash('Please select an item.', 'danger')
+                return redirect(url_for('edit_repurchase_order', order_id=order_id))
+            
+            if not form.quantity.data or form.quantity.data < 1:
+                flash('Please enter a valid quantity.', 'danger')
+                return redirect(url_for('edit_repurchase_order', order_id=order_id))
+            
             # Check if item already exists in order
             existing_item = RepurchaseOrderItem.query.filter_by(
                 order_id=order.id,
@@ -3520,14 +3549,9 @@ def add_to_existing_order(order_id):
         except Exception as e:
             db.session.rollback()
             flash(f'Error adding item: {str(e)}', 'danger')
-    else:
-        for field, errors in form.errors.items():
-            for error in errors:
-                flash(f'{getattr(form, field).label.text}: {error}', 'danger')
     
     return redirect(url_for('edit_repurchase_order', order_id=order_id))
 
-@app.route('/admin/delete_repurchase_order/<int:order_id>', methods=['POST'])
 @login_required
 def admin_delete_repurchase_order(order_id):
     """Admin delete repurchase order"""
