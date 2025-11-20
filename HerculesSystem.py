@@ -3445,21 +3445,23 @@ def edit_repurchase_order(order_id):
     
     if request.method == 'POST':
         try:
-            # Update order remarks
-            order.remarks = request.form.get('remarks', '')
-            
-            # Update quantities for items
-            for item in order.items:
-                quantity_field = f'quantity_{item.id}'
-                if quantity_field in request.form:
-                    item.quantity = int(request.form[quantity_field])
-            
-            # Update total items count
-            order.total_items = sum(item.quantity for item in order.items)
-            
-            db.session.commit()
-            flash('Order updated successfully!', 'success')
-            return redirect(url_for('repurchase'))
+            # Check if this is a quantity update (Save Changes) or adding new item
+            if 'remarks' in request.form:
+                # This is the "Save Changes" form - update quantities and remarks
+                order.remarks = request.form.get('remarks', '')
+                
+                # Update quantities for items
+                for item in order.items:
+                    quantity_field = f'quantity_{item.id}'
+                    if quantity_field in request.form:
+                        item.quantity = int(request.form[quantity_field])
+                
+                # Update total items count
+                order.total_items = sum(item.quantity for item in order.items)
+                
+                db.session.commit()
+                flash('Order updated successfully!', 'success')
+                return redirect(url_for('repurchase'))
             
         except Exception as e:
             db.session.rollback()
@@ -3468,7 +3470,62 @@ def edit_repurchase_order(order_id):
     return render_template('edit_repurchase_order.html', 
                          order=order,
                          categories=categories,
-                         form=form)  
+                         form=form)
+
+@app.route('/add_to_existing_order/<int:order_id>', methods=['POST'])
+@login_required
+def add_to_existing_order(order_id):
+    """Add item to existing repurchase order during editing"""
+    order = RepurchaseOrder.query.get_or_404(order_id)
+    
+    # Check if user owns this order and it's still pending review
+    if order.employee_id != current_user.id:
+        flash('You can only edit your own orders.', 'danger')
+        return redirect(url_for('repurchase'))
+    
+    if order.status != 'pending_review':
+        flash('Only orders pending review can be edited.', 'danger')
+        return redirect(url_for('repurchase'))
+    
+    form = RepurchaseOrderForm()
+    
+    if form.validate_on_submit():
+        try:
+            # Check if item already exists in order
+            existing_item = RepurchaseOrderItem.query.filter_by(
+                order_id=order.id,
+                item_id=form.item_id.data
+            ).first()
+            
+            if existing_item:
+                # Update existing item quantity
+                existing_item.quantity += form.quantity.data
+                existing_item.remarks = form.remarks.data or existing_item.remarks
+            else:
+                # Add new item to existing order
+                order_item = RepurchaseOrderItem(
+                    order_id=order.id,
+                    item_id=form.item_id.data,
+                    quantity=form.quantity.data,
+                    remarks=form.remarks.data
+                )
+                db.session.add(order_item)
+            
+            # Update total items count
+            order.total_items = sum(item.quantity for item in order.items)
+            
+            db.session.commit()
+            flash('Item added to order successfully!', 'success')
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding item: {str(e)}', 'danger')
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{getattr(form, field).label.text}: {error}', 'danger')
+    
+    return redirect(url_for('edit_repurchase_order', order_id=order_id))
 
 @app.route('/admin/delete_repurchase_order/<int:order_id>', methods=['POST'])
 @login_required

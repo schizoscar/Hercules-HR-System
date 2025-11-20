@@ -14,11 +14,11 @@
         <p style="color: #666; margin-bottom: 25px;">Modify your order items below. You can change quantities, remove items, or add new items.</p>
     </div>
 
-    <!-- Order Form Section - Same as repurchase page -->
+    <!-- Order Form Section - Updated to add to existing order -->
     <div class="glass">
         <h3 style="margin-bottom: 20px; color: #333;">Add New Item</h3>
         
-        <form method="POST" action="{{ url_for('add_repurchase_item') }}" id="repurchase-form">
+        <form method="POST" action="{{ url_for('add_to_existing_order', order_id=order.id) }}" id="repurchase-form">
             {{ form.hidden_tag() }}
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
@@ -53,82 +53,82 @@
 
     <!-- Current Order Section - Shows the order being edited -->
     <div class="glass">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
-            <h3 style="margin: 0;">Order Being Edited ({{ order.total_items }} items)</h3>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <form method="POST" action="{{ url_for('edit_repurchase_order', order_id=order.id) }}" style="margin: 0;">
+        <form method="POST" action="{{ url_for('edit_repurchase_order', order_id=order.id) }}" id="edit-order-form">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                <h3 style="margin: 0;">Order Being Edited ({{ order.total_items }} items)</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button type="submit" class="btn btn-success" style="display: inline-flex; align-items: center; gap: 8px;">
                         <span>💾</span>
                         <span>Save Changes</span>
                     </button>
-                </form>
-                <a href="{{ url_for('repurchase') }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">
-                    <span>←</span>
-                    <span>Back to Orders</span>
-                </a>
+                    <a href="{{ url_for('repurchase') }}" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);">
+                        <span>←</span>
+                        <span>Back to Orders</span>
+                    </a>
+                </div>
             </div>
-        </div>
 
-        <!-- Order Remarks -->
-        <div style="margin-bottom: 20px;">
-            <label for="order_remarks" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Order Remarks (Optional)</label>
-            <textarea name="remarks" form="edit-order-form" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; background: rgba(255, 255, 255, 0.9); min-height: 80px; resize: vertical;"
-                      placeholder="Any additional notes for your entire order...">{{ order.remarks or '' }}</textarea>
-        </div>
+            <!-- Order Remarks -->
+            <div style="margin-bottom: 20px;">
+                <label for="order_remarks" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Order Remarks (Optional)</label>
+                <textarea name="remarks" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; background: rgba(255, 255, 255, 0.9); min-height: 80px; resize: vertical;"
+                          placeholder="Any additional notes for your entire order...">{{ order.remarks or '' }}</textarea>
+            </div>
 
-        {% if order.items %}
-        <div class="table-scroll-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Item</th>
-                        <th>Category</th>
-                        <th>Quantity</th>
-                        <th>Remarks</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in order.items %}
-                    <tr>
-                        <td>{{ item.item.name }}</td>
-                        <td>{{ item.item.category.name }}</td>
-                        <td>
-                            <input type="number" 
-                                   name="quantity_{{ item.id }}" 
-                                   value="{{ item.quantity }}" 
-                                   min="1" 
-                                   style="width: 80px; padding: 8px; border-radius: 6px; border: 1px solid #ddd; text-align: center;"
-                                   form="edit-order-form">
-                        </td>
-                        <td>{{ item.remarks or '-' }}</td>
-                        <td>
-                            <form action="{{ url_for('remove_repurchase_item', item_id=item.id) }}" method="POST" style="margin: 0;">
-                                <button type="submit" class="btn btn-sm btn-danger" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
-                                        onclick="return confirm('Remove {{ item.item.name }} from your order?')">
-                                    <span>🗑️</span>
-                                    <span class="action-text">Remove</span>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="no-items" style="text-align: center; padding: 40px;">
-            <p style="font-size: 1.1rem; color: #666; margin-bottom: 10px;">No items in this order yet</p>
-            <p style="color: #999;">Add items from the form above</p>
-        </div>
-        {% endif %}
+            {% if order.items %}
+            <div class="table-scroll-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Category</th>
+                            <th>Quantity</th>
+                            <th>Remarks</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in order.items %}
+                        <tr>
+                            <td>{{ item.item.name }}</td>
+                            <td>{{ item.item.category.name }}</td>
+                            <td>
+                                <input type="number" 
+                                       name="quantity_{{ item.id }}" 
+                                       value="{{ item.quantity }}" 
+                                       min="1" 
+                                       style="width: 80px; padding: 8px; border-radius: 6px; border: 1px solid #ddd; text-align: center;"
+                                       onchange="updateTotalItems()">
+                            </td>
+                            <td>{{ item.remarks or '-' }}</td>
+                            <td>
+                                <form action="{{ url_for('remove_repurchase_item', item_id=item.id) }}" method="POST" style="margin: 0;">
+                                    <button type="submit" class="btn btn-sm btn-danger" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;"
+                                            onclick="return confirm('Remove {{ item.item.name }} from your order?')">
+                                        <span>🗑️</span>
+                                        <span class="action-text">Remove</span>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 15px; background: rgba(67, 97, 238, 0.1); border-radius: 8px;">
+                <p style="margin: 0; font-weight: 600; color: #333;">
+                    Total Items: <span id="total-items">{{ order.total_items }}</span>
+                </p>
+            </div>
+            {% else %}
+            <div class="no-items" style="text-align: center; padding: 40px;">
+                <p style="font-size: 1.1rem; color: #666; margin-bottom: 10px;">No items in this order yet</p>
+                <p style="color: #999;">Add items from the form above</p>
+            </div>
+            {% endif %}
+        </form>
     </div>
-
-    <!-- Hidden form for saving order changes -->
-    <form method="POST" action="{{ url_for('edit_repurchase_order', order_id=order.id) }}" id="edit-order-form" style="display: none;">
-        <!-- This form will be submitted when user clicks "Save Changes" -->
-        <!-- The quantities are bound to this form via the name attribute -->
-    </form>
 </div>
 
 <style>
@@ -429,9 +429,28 @@
         }
     });
 
-    // Auto-save functionality could be added here if needed
+    // Update total items count when quantities change
+    function updateTotalItems() {
+        let total = 0;
+        const quantityInputs = document.querySelectorAll('input[type="number"][name^="quantity_"]');
+
+        quantityInputs.forEach(input => {
+            total += parseInt(input.value) || 0;
+        });
+
+        document.getElementById('total-items').textContent = total;
+    }
+
+    // Initialize total items calculation
     document.addEventListener('DOMContentLoaded', function () {
-        console.log('Edit order page loaded for order {{ order.id }}');
+        updateTotalItems();
+
+        // Add event listeners to all quantity inputs
+        const quantityInputs = document.querySelectorAll('input[type="number"][name^="quantity_"]');
+        quantityInputs.forEach(input => {
+            input.addEventListener('change', updateTotalItems);
+            input.addEventListener('input', updateTotalItems);
+        });
     });
 </script>
 {% endblock %}
