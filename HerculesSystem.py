@@ -3552,6 +3552,7 @@ def add_to_existing_order(order_id):
     
     return redirect(url_for('edit_repurchase_order', order_id=order_id))
 
+@app.route('/admin/delete_repurchase_order/<int:order_id>', methods=['POST'])
 @login_required
 def admin_delete_repurchase_order(order_id):
     """Admin delete repurchase order"""
