@@ -6675,6 +6675,15 @@ def time_reports():
         page=page, per_page=per_page, error_out=False
     )
     
+    # Convert timestamps to Malaysian time
+    for record in time_records.items:
+        if record.timestamp.tzinfo is None:
+            # If timestamp is naive (no timezone), assume UTC and convert to MYT
+            record.timestamp = pytz.utc.localize(record.timestamp).astimezone(MYT)
+        else:
+            # If timestamp has timezone, convert to MYT
+            record.timestamp = record.timestamp.astimezone(MYT)
+    
     return render_template('time_reports.html',
                          time_records=time_records.items,
                          employees=employees,
