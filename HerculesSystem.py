@@ -184,7 +184,6 @@ def create_all_tables():
         return redirect(url_for('dashboard'))
     
     try:
-        # Create all tables that should exist based on your models
         db.create_all()
         
         # Check which tables exist now
@@ -429,7 +428,6 @@ def create_missing_tables():
         return redirect(url_for('dashboard'))
     
     try:
-        # Create all tables that should exist based on your models
         db.create_all()
         
         # Check which tables were created
@@ -831,11 +829,11 @@ def send_email_sendgrid(to_email, subject, body):
                     'to': [{'email': to_email}]
                 }],
                 'from': {
-                    'email': 'it@hercules-engineering.com',  # Your verified domain email
+                    'email': 'it@hercules-engineering.com',  # verified domain email
                     'name': 'Hercules HR System'
                 },
                 'reply_to': {
-                    'email': 'it@hercules-engineering.com',  # Replies to your domain
+                    'email': 'it@hercules-engineering.com',  # replies to domain
                     'name': 'Hercules HR Support'
                 },
                 'subject': subject,
@@ -944,7 +942,7 @@ def send_email_webmail(to_email, subject, body):
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
         
-        # Your email settings
+        # email settings
         smtp_server = "mail.hercules-engineering.com"
         smtp_username = "it@hercules-engineering.com"
         smtp_password = "jbjkaavkufvjkrak"  # App password
@@ -1020,7 +1018,7 @@ def send_email_webmail(to_email, subject, body):
 @app.route('/test_sendgrid_verified')
 @login_required
 def test_sendgrid_verified():
-    """Test SendGrid with your verified domain email"""
+    """Test SendGrid with verified domain email"""
     if current_user.user_type != 'admin':
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1035,7 +1033,7 @@ This means password reset emails will now work properly!"""
 
     # Send test to yourself
     success = send_email_sendgrid(
-        "it@hercules-engineering.com",  # Send to yourself first
+        "it@hercules-engineering.com",  
         test_subject, 
         test_body
     )
@@ -2110,9 +2108,9 @@ def is_in_office(latitude, longitude, accuracy=None):
         return False
     
     try:
-        # Office coordinates (replace with your actual office coordinates)
-        OFFICE_LATITUDE = 3.2227626628735946  # Your office latitude
-        OFFICE_LONGITUDE = 101.56524201599817  # Your office longitude
+        # Office coordinates
+        OFFICE_LATITUDE = 3.2227626628735946  # office latitude
+        OFFICE_LONGITUDE = 101.56524201599817  # office longitude
         
         # Office radius in kilometers
         OFFICE_RADIUS_KM = 0.1  # 100 meters radius
@@ -3126,7 +3124,7 @@ def email_gone_online_test():
         flash('You do not have permission to perform this action.', 'danger')
         return redirect(url_for('dashboard'))
 
-    # Find your test employee
+    # Find test employee
     test_employee = Employee.query.filter_by(email="sumirepohscarlet@gmail.com").first()
     if not test_employee:
         flash('Test employee not found.', 'danger')
@@ -4260,9 +4258,6 @@ def reset_admin_password():
         db.session.commit()
         flash(f"Admin password reset successfully. New password: {temp_password}", "success")
         
-        # Optional: send email to admin
-        # send_email_sendgrid(admin_user.email, "Admin Password Reset", f"Your new password is: {temp_password}")
-        
     except Exception as e:
         db.session.rollback()
         flash(f"Error resetting admin password: {str(e)}", "danger")
@@ -4803,8 +4798,8 @@ def calculate_monthly_payroll(employee, pay_period):
 
 def calculate_overtime_hours(employee_id, pay_period):
     """Calculate overtime hours for an employee in a pay period"""
-    # Implement your overtime calculation logic here
-    # This is a placeholder - you'll need to track overtime in your system
+    # Implement overtime calculation logic here.. in the future..
+    # track overtime here
     return Decimal('0')
 
 def calculate_unpaid_leave_deduction(salary, unpaid_days):
@@ -6803,11 +6798,6 @@ try:
     NETIFACES_AVAILABLE = True
 except ImportError:
     NETIFACES_AVAILABLE = False
-
-# Your existing imports and app configuration...
-# [Keep all your existing imports and app setup code here]
-
-# REMOVE the top-level db.create_all() block entirely
 
 if __name__ == '__main__':
     if not os.path.exists(app.instance_path):
